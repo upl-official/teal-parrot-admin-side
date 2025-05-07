@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -8,8 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { AlertCircle, Eye, EyeOff } from "lucide-react"
-import Image from "next/image"
-import { login } from "@/lib/auth"
+import { login, isAuthenticated } from "@/lib/auth"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -18,6 +17,13 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
+
+  // Check if user is already authenticated on mount
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.push("/dashboard")
+    }
+  }, [router])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -38,7 +44,9 @@ export default function LoginPage() {
     }
 
     try {
+      console.log("Attempting login with:", { email })
       const result = await login(email, password)
+      console.log("Login result:", result)
 
       if (result.success) {
         // Redirect to dashboard
@@ -47,8 +55,8 @@ export default function LoginPage() {
         setError(result.error || "Login failed. Please check your credentials.")
       }
     } catch (err) {
+      console.error("Login error:", err)
       setError("An unexpected error occurred. Please try again.")
-      console.error(err)
     } finally {
       setLoading(false)
     }
@@ -59,7 +67,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 flex flex-col items-center">
           <div className="w-40 h-40 relative mb-4">
-            <Image src="/tp-logo-color.webp" alt="TealParrot Logo" fill priority className="object-contain" />
+            <img src="/tp-logo-color.webp" alt="TealParrot Logo" className="object-contain w-full h-full" />
           </div>
           <CardTitle className="text-2xl font-bold text-center">Admin Login</CardTitle>
           <CardDescription className="text-center">Enter your credentials to access the admin panel</CardDescription>
