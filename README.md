@@ -25,7 +25,7 @@ A comprehensive admin dashboard for managing e-commerce operations including pro
 
 ### Prerequisites
 
-- Node.js 18+ and npm/yarn
+- Node.js 18+ and pnpm
 - Git
 
 ### Installation
@@ -38,9 +38,7 @@ A comprehensive admin dashboard for managing e-commerce operations including pro
 
 2. Install dependencies:
    \`\`\`bash
-   npm install
-   # or
-   yarn install
+   pnpm install
    \`\`\`
 
 3. Set up environment variables:
@@ -51,16 +49,14 @@ A comprehensive admin dashboard for managing e-commerce operations including pro
 
 4. Run the development server:
    \`\`\`bash
-   npm run dev
-   # or
-   yarn dev
+   pnpm dev
    \`\`\`
 
 5. Open [http://localhost:3000](http://localhost:3000) in your browser to see the result.
 
 ### API Configuration
 
-The dashboard connects to a backend API. Update the `API_BASE_URL` in the `.env.local` file to point to your API endpoint.
+The dashboard connects to a backend API. Update the `API_BASE_URL` and `NEXT_PUBLIC_API_URL` in the `.env.local` file to point to your API endpoint.
 
 ## Project Structure
 
@@ -83,24 +79,48 @@ These credentials are for development purposes only. In production, you should u
 
 This project can be deployed on Vercel, Netlify, or any other hosting platform that supports Next.js.
 
-To deploy on Vercel:
+### Deploying to Vercel
+
+1. Push your code to a Git repository (GitHub, GitLab, or Bitbucket)
+2. Import the project in Vercel
+3. Set the environment variables in the Vercel dashboard
+4. Deploy
+
+Alternatively, you can use the Vercel CLI:
 
 \`\`\`bash
+pnpm global add vercel
 vercel
 \`\`\`
+
+## Troubleshooting
+
+### Common Issues
+
+1. **API Connection Issues**: Ensure your API endpoints are correctly set in `.env.local`
+2. **Authentication Errors**: Check that your API is returning the expected token format
+3. **Image Loading Issues**: Verify that the domains in `next.config.js` include all image sources
+
+### Build Errors
+
+If you encounter build errors, try the following:
+
+1. Clear the `.next` folder: `rm -rf .next`
+2. Clear the pnpm cache: `pnpm store prune`
+3. Reinstall dependencies: `pnpm install`
+4. Rebuild the project: `pnpm build`
 
 ## License
 
 [MIT](LICENSE)
 \`\`\`
 
-Let's create an environment variables example file:
+Let's create a .env.local file with default values (this will be gitignored but useful for local development):
 
-```plaintext file=".env.example"
+```plaintext file=".env.local"
 # API Configuration
 API_BASE_URL=https://backend-project-r734.onrender.com
 NEXT_PUBLIC_API_URL=https://backend-project-r734.onrender.com
 
 # Authentication
-# These values are used during development only
-AUTH_SECRET=your-auth-secret-key
+AUTH_SECRET=local-development-secret-key

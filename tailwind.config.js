@@ -1,6 +1,5 @@
-import type { Config } from "tailwindcss"
-
-const config: Config = {
+/** @type {import('tailwindcss').Config} */
+module.exports = {
   darkMode: ["class"],
   content: [
     "./pages/**/*.{ts,tsx}",
@@ -9,7 +8,6 @@ const config: Config = {
     "./src/**/*.{ts,tsx}",
     "*.{js,ts,jsx,tsx,mdx}",
   ],
-  prefix: "",
   theme: {
     container: {
       center: true,
@@ -53,6 +51,20 @@ const config: Config = {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        // Brand colors
+        teal: {
+          DEFAULT: "#00B5AD",
+          50: "#E0F7F6",
+          100: "#B3ECE9",
+          200: "#80E0DC",
+          300: "#4DD4CE",
+          400: "#26C9C1",
+          500: "#00B5AD",
+          600: "#00A39C",
+          700: "#008F89",
+          800: "#007C77",
+          900: "#006A65",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -61,12 +73,12 @@ const config: Config = {
       },
       keyframes: {
         "accordion-down": {
-          from: { height: "0" },
+          from: { height: 0 },
           to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
           from: { height: "var(--radix-accordion-content-height)" },
-          to: { height: "0" },
+          to: { height: 0 },
         },
       },
       animation: {
@@ -77,5 +89,3 @@ const config: Config = {
   },
   plugins: [require("tailwindcss-animate")],
 }
-
-export default config
