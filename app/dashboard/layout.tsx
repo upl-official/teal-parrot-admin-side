@@ -1,7 +1,6 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
 import Sidebar from "@/components/layout/sidebar"
 import Footer from "@/components/layout/footer"
 import { Toaster } from "@/components/ui/toaster"
@@ -9,16 +8,26 @@ import { isAuthenticated } from "@/lib/auth"
 
 export default function DashboardLayout({ children }) {
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
+  const [authenticated, setAuthenticated] = useState(false)
 
   useEffect(() => {
     // Check if user is authenticated
-    if (!isAuthenticated()) {
-      router.push("/login")
-    } else {
+    const checkAuth = () => {
+      const isAuth = isAuthenticated()
+      console.log("Dashboard layout - Auth check:", isAuth)
+
+      if (!isAuth) {
+        console.log("Not authenticated, redirecting to login")
+        window.location.href = "/login"
+        return
+      }
+
+      setAuthenticated(true)
       setLoading(false)
     }
-  }, [router])
+
+    checkAuth()
+  }, [])
 
   if (loading) {
     return (
@@ -26,6 +35,10 @@ export default function DashboardLayout({ children }) {
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
       </div>
     )
+  }
+
+  if (!authenticated) {
+    return null
   }
 
   return (

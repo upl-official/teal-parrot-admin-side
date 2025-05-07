@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [error, setError] = useState("")
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
   const router = useRouter()
 
   // Check if user is already authenticated on mount
@@ -23,12 +24,12 @@ export default function LoginPage() {
     const checkAuth = async () => {
       if (isAuthenticated()) {
         console.log("User is already authenticated, redirecting to dashboard")
-        router.push("/dashboard")
+        window.location.href = "/dashboard"
       }
     }
 
     checkAuth()
-  }, [router])
+  }, [])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -55,10 +56,18 @@ export default function LoginPage() {
 
       if (result.success) {
         console.log("Login successful, redirecting to dashboard")
-        // Use router.push with a slight delay to ensure token is stored
+        setRedirecting(true)
+
+        // Force a hard navigation to the dashboard
+        window.location.href = "/dashboard"
+
+        // As a fallback, also try the router after a delay
         setTimeout(() => {
-          router.push("/dashboard")
-        }, 100)
+          if (document.location.pathname !== "/dashboard") {
+            console.log("Fallback: Using router.push for redirection")
+            router.push("/dashboard")
+          }
+        }, 500)
       } else {
         setError(result.error || "Login failed. Please check your credentials.")
       }
@@ -66,7 +75,9 @@ export default function LoginPage() {
       console.error("Login error:", err)
       setError("An unexpected error occurred. Please try again.")
     } finally {
-      setLoading(false)
+      if (!redirecting) {
+        setLoading(false)
+      }
     }
   }
 
@@ -87,6 +98,13 @@ export default function LoginPage() {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
+          {redirecting && (
+            <Alert className="mb-4 bg-green-50 border-green-200">
+              <AlertDescription className="text-green-700">
+                Login successful! Redirecting to dashboard...
+              </AlertDescription>
+            </Alert>
+          )}
           <form onSubmit={handleLogin}>
             <div className="grid gap-4">
               <div className="grid gap-2">
@@ -99,6 +117,7 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   autoComplete="email"
+                  disabled={loading || redirecting}
                 />
               </div>
               <div className="grid gap-2">
@@ -111,6 +130,7 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     autoComplete="current-password"
+                    disabled={loading || redirecting}
                   />
                   <Button
                     type="button"
@@ -118,15 +138,34 @@ export default function LoginPage() {
                     size="icon"
                     className="absolute right-0 top-0 h-full px-3"
                     onClick={() => setShowPassword(!showPassword)}
+                    disabled={loading || redirecting}
                   >
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
                   </Button>
                 </div>
               </div>
-              <Button type="submit" className="w-full bg-[#28acc1] hover:bg-[#1e8a9a]" disabled={loading}>
-                {loading ? "Logging in..." : "Login"}
+              <Button
+                type="submit"
+                className="w-full bg-[#28acc1] hover:bg-[#1e8a9a]"
+                disabled={loading || redirecting}
+              >
+                {loading ? "Logging in..." : redirecting ? "Redirecting..." : "Login"}
               </Button>
+              {redirecting && (
+                <div className="text-center mt-2">
+                  <p className="text-sm text-gray-500">
+                    If you are not redirected automatically,
+                    <button
+                      type="button"
+                      onClick={() => (window.location.href = "/dashboard")}
+                      className="text-[#28acc1] hover:underline ml-1"
+                    >
+                      click here
+                    </button>
+                  </p>
+                </div>
+              )}
             </div>
           </form>
         </CardContent>
