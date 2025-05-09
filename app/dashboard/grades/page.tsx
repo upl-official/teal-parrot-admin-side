@@ -1,7 +1,6 @@
 "use client"
 
 import { DialogTrigger } from "@/components/ui/dialog"
-
 import { useState, useEffect } from "react"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
@@ -15,12 +14,21 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Plus, Pencil, Trash } from "lucide-react"
+import { Plus, Pencil, Trash, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { DataTable } from "@/components/ui/data-table"
-// Add the import for ConfirmationDialog at the top of the file:
-import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export default function GradesPage() {
   const [grades, setGrades] = useState([])
@@ -32,9 +40,14 @@ export default function GradesPage() {
   const [nameError, setNameError] = useState("")
   const { toast } = useToast()
 
-  // Add the state variables for the confirmation dialog:
+  // State for deletion dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [gradeToDelete, setGradeToDelete] = useState(null)
+  const [gradeToDeleteName, setGradeToDeleteName] = useState("")
+  const [gradeProductCount, setGradeProductCount] = useState(0)
+
+  // Track loading state for individual product counts
+  const [productCountsLoading, setProductCountsLoading] = useState({})
 
   useEffect(() => {
     fetchGrades()
@@ -44,19 +57,90 @@ export default function GradesPage() {
     try {
       setLoading(true)
       const response = await fetchApi("/api/v1/grade/gra-list/")
-      // Updated to match the API response structure
       const gradesData = response.data || []
-      setGrades(gradesData)
+
+      // Initialize grades with zero product counts
+      const gradesWithCounts = gradesData.map((grade) => ({
+        ...grade,
+        productCount: 0,
+        isCountLoading: true,
+      }))
+
+      setGrades(gradesWithCounts)
+
+      // Fetch product counts for each grade
+      await fetchProductCounts(gradesWithCounts)
     } catch (error) {
+      console.error("Failed to fetch grades:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch grades",
+        description: "Failed to fetch grades: " + (error.message || "Unknown error"),
       })
       setGrades([])
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchProductCounts = async (gradesData) => {
+    // Create a new object to track loading states
+    const loadingStates = {}
+    gradesData.forEach((grade) => {
+      loadingStates[grade._id] = true
+    })
+    setProductCountsLoading(loadingStates)
+
+    // Create a copy of the grades array to update with product counts
+    const updatedGrades = [...gradesData]
+
+    // Fetch product counts for each grade
+    const countPromises = updatedGrades.map(async (grade, index) => {
+      try {
+        const response = await fetchApi(`/api/v1/product/list/?gradeId=${grade._id}`)
+
+        // Extract product count from the correct path in the response
+        // The API returns data.products array
+        const productCount = response.data?.products?.length || 0
+
+        console.log(`Grade ${grade.grade} (${grade._id}) has ${productCount} products`)
+
+        // Update the grade with the product count
+        updatedGrades[index] = {
+          ...grade,
+          productCount: productCount,
+          isCountLoading: false,
+        }
+
+        // Update loading state for this grade
+        setProductCountsLoading((prev) => ({
+          ...prev,
+          [grade._id]: false,
+        }))
+      } catch (error) {
+        console.error(`Failed to fetch product count for grade ${grade.grade}:`, error)
+
+        // If there's an error, set product count to 0
+        updatedGrades[index] = {
+          ...grade,
+          productCount: 0,
+          isCountLoading: false,
+          countError: true,
+        }
+
+        // Update loading state for this grade
+        setProductCountsLoading((prev) => ({
+          ...prev,
+          [grade._id]: false,
+        }))
+      }
+    })
+
+    // Wait for all count fetches to complete
+    await Promise.all(countPromises)
+
+    // Update the grades state with the product counts
+    setGrades(updatedGrades)
   }
 
   const validateGradeName = () => {
@@ -120,12 +204,64 @@ export default function GradesPage() {
     }
   }
 
-  const confirmDeleteGrade = (gradeId) => {
-    setGradeToDelete(gradeId)
-    setDeleteDialogOpen(true)
+  const confirmDeleteGrade = async (grade) => {
+    try {
+      // Set loading state for this specific check
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [grade._id]: true,
+      }))
+
+      // Fetch products associated with this grade
+      const response = await fetchApi(`/api/v1/product/list/?gradeId=${grade._id}`)
+
+      // Extract product count from the correct path in the response
+      const productCount = response.data?.products?.length || 0
+
+      console.log(`Checking deletion for grade ${grade.grade} (${grade._id}): ${productCount} products found`)
+
+      // Update loading state
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [grade._id]: false,
+      }))
+
+      // Store the grade info and product count
+      setGradeToDelete(grade._id)
+      setGradeToDeleteName(grade.grade)
+      setGradeProductCount(productCount)
+
+      // Open the confirmation dialog
+      setDeleteDialogOpen(true)
+    } catch (error) {
+      console.error(`Failed to check products for grade ${grade.grade}:`, error)
+
+      // Update loading state
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [grade._id]: false,
+      }))
+
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to check associated products: " + (error.message || "Unknown error"),
+      })
+    }
   }
 
   const handleDeleteGrade = async () => {
+    // If there are associated products, don't allow deletion
+    if (gradeProductCount > 0) {
+      setDeleteDialogOpen(false)
+      toast({
+        variant: "destructive",
+        title: "Cannot Delete Grade",
+        description: `This grade has ${gradeProductCount} associated products. Please reassign or delete these products first.`,
+      })
+      return
+    }
+
     try {
       await fetchApi("/api/v1/admin/grade/remove", {
         method: "DELETE",
@@ -142,11 +278,13 @@ export default function GradesPage() {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to delete grade",
+        description: "Failed to delete grade: " + (error.message || "Unknown error"),
       })
     } finally {
       setDeleteDialogOpen(false)
       setGradeToDelete(null)
+      setGradeToDeleteName("")
+      setGradeProductCount(0)
     }
   }
 
@@ -165,7 +303,18 @@ export default function GradesPage() {
     {
       key: "productCount",
       header: "Products",
-      cell: (row) => row.productCount || 0,
+      cell: (row) => (
+        <div className="flex items-center">
+          {productCountsLoading[row._id] ? (
+            <div className="flex items-center">
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <span className="text-muted-foreground">Loading...</span>
+            </div>
+          ) : (
+            <span className="font-medium">{row.productCount || 0}</span>
+          )}
+        </div>
+      ),
     },
     {
       key: "actions",
@@ -185,11 +334,15 @@ export default function GradesPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => confirmDeleteGrade(row._id)}
+            onClick={() => confirmDeleteGrade(row)}
             className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
             title="Delete Grade"
           >
-            <Trash className="h-4 w-4" />
+            {productCountsLoading[row._id] ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash className="h-4 w-4" />
+            )}
             <span className="sr-only">Delete</span>
           </Button>
         </div>
@@ -219,7 +372,7 @@ export default function GradesPage() {
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="grade" className={nameError ? "text-destructive" : ""}>
-                    Grade
+                    Grade <span className="text-red-500">*</span>
                   </Label>
                   <Input
                     id="grade"
@@ -255,7 +408,7 @@ export default function GradesPage() {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="edit-grade" className={nameError ? "text-destructive" : ""}>
-                  Grade
+                  Grade <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="edit-grade"
@@ -289,17 +442,65 @@ export default function GradesPage() {
           loading={loading}
         />
 
-        {/* Add the confirmation dialog here */}
-        <ConfirmationDialog
-          open={deleteDialogOpen}
-          onOpenChange={setDeleteDialogOpen}
-          title="Delete Grade"
-          description="Are you sure you want to delete this grade? This action cannot be undone and may affect products associated with this grade."
-          onConfirm={handleDeleteGrade}
-          confirmText="Delete"
-          cancelText="Cancel"
-          variant="destructive"
-        />
+        {/* Completely separate dialogs for different cases */}
+        {gradeProductCount > 0 ? (
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cannot Delete Grade</AlertDialogTitle>
+              </AlertDialogHeader>
+
+              <div className="py-3">
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Action Not Allowed</AlertTitle>
+                  <AlertDescription>
+                    There are {gradeProductCount} active products under this grade. Delete or reassign these products to
+                    a different grade to delete this grade.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="mt-4 space-y-2">
+                  <p className="font-medium">To delete this grade, you must first:</p>
+                  <ol className="list-decimal pl-5 space-y-1">
+                    <li>Go to the Products page</li>
+                    <li>Reassign or delete products under this grade.</li>
+                    <li>Return to this page and try deleting the grade again</li>
+                  </ol>
+                </div>
+              </div>
+
+              <AlertDialogFooter>
+                <AlertDialogAction asChild>
+                  <Button variant="default" onClick={() => setDeleteDialogOpen(false)}>
+                    Close
+                  </Button>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Grade</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete the grade "{gradeToDeleteName}"? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel asChild>
+                  <Button variant="outline">Cancel</Button>
+                </AlertDialogCancel>
+                <AlertDialogAction asChild>
+                  <Button variant="destructive" onClick={handleDeleteGrade}>
+                    Delete
+                  </Button>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
     </div>
   )

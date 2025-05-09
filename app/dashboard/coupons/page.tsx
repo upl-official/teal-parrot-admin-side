@@ -5,22 +5,28 @@ import { useRouter } from "next/navigation"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Plus, Pencil, Trash } from "lucide-react"
+import { Plus, Pencil, Trash, X } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { DataTable } from "@/components/ui/data-table"
-// Add the import for ConfirmationDialog at the top of the file:
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Progress } from "@/components/ui/progress"
 
 export default function CouponsPage() {
   const [coupons, setCoupons] = useState([])
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
-  const { toast } = useToast()
-
-  // Add the state variables for the confirmation dialog:
+  const [selectedCoupons, setSelectedCoupons] = useState([])
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [couponToDelete, setCouponToDelete] = useState(null)
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false)
+  const [bulkDeleteProgress, setBulkDeleteProgress] = useState(0)
+  const [bulkDeleteStatus, setBulkDeleteStatus] = useState({ total: 0, success: 0, failed: 0 })
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false)
+  const [bulkDeleteErrors, setBulkDeleteErrors] = useState([])
+
+  const router = useRouter()
+  const { toast } = useToast()
 
   useEffect(() => {
     fetchCoupons()
@@ -75,6 +81,91 @@ export default function CouponsPage() {
     }
   }
 
+  const handleSelectAllCoupons = (checked) => {
+    if (checked) {
+      setSelectedCoupons(coupons.map((coupon) => coupon._id))
+    } else {
+      setSelectedCoupons([])
+    }
+  }
+
+  const handleSelectCoupon = (couponId, checked) => {
+    if (checked) {
+      setSelectedCoupons((prev) => [...prev, couponId])
+    } else {
+      setSelectedCoupons((prev) => prev.filter((id) => id !== couponId))
+    }
+  }
+
+  const confirmBulkDeleteCoupons = () => {
+    setBulkDeleteStatus({
+      total: selectedCoupons.length,
+      success: 0,
+      failed: 0,
+    })
+    setBulkDeleteProgress(0)
+    setBulkDeleteErrors([])
+    setBulkDeleteDialogOpen(true)
+  }
+
+  const handleBulkDeleteCoupons = async () => {
+    if (selectedCoupons.length === 0) return
+
+    setIsBulkDeleting(true)
+    setBulkDeleteErrors([])
+    let successCount = 0
+    let failedCount = 0
+
+    for (let i = 0; i < selectedCoupons.length; i++) {
+      const couponId = selectedCoupons[i]
+      try {
+        await fetchApi("/api/v1/admin/coupon/remove", {
+          method: "DELETE",
+          body: JSON.stringify({ couponId }),
+        })
+        successCount++
+      } catch (error) {
+        failedCount++
+        const coupon = coupons.find((c) => c._id === couponId)
+        setBulkDeleteErrors((prev) => [
+          ...prev,
+          { id: couponId, code: coupon?.code || couponId, error: error.message || "Unknown error" },
+        ])
+      }
+
+      // Update progress
+      const progress = Math.round(((i + 1) / selectedCoupons.length) * 100)
+      setBulkDeleteProgress(progress)
+      setBulkDeleteStatus({
+        total: selectedCoupons.length,
+        success: successCount,
+        failed: failedCount,
+      })
+    }
+
+    // Only close dialog and refresh if there were no errors or user confirms
+    if (failedCount === 0) {
+      setTimeout(() => {
+        setBulkDeleteDialogOpen(false)
+        setSelectedCoupons([])
+        fetchCoupons()
+        setIsBulkDeleting(false)
+
+        toast({
+          title: "Success",
+          description: `Successfully deleted ${successCount} coupons`,
+        })
+      }, 1000) // Short delay to show 100% completion
+    } else {
+      setIsBulkDeleting(false)
+      toast({
+        variant: "destructive",
+        title: "Partial Success",
+        description: `Deleted ${successCount} coupons, but ${failedCount} failed`,
+      })
+    }
+  }
+
   const formatDate = (dateString) => {
     if (!dateString) return "N/A"
     return new Date(dateString).toLocaleDateString()
@@ -88,6 +179,24 @@ export default function CouponsPage() {
   }
 
   const columns = [
+    {
+      key: "select",
+      header: (
+        <Checkbox
+          checked={selectedCoupons.length > 0 && selectedCoupons.length === coupons.length}
+          onCheckedChange={handleSelectAllCoupons}
+          aria-label="Select all coupons"
+        />
+      ),
+      cell: (row) => (
+        <Checkbox
+          checked={selectedCoupons.includes(row._id)}
+          onCheckedChange={(checked) => handleSelectCoupon(row._id, checked)}
+          aria-label={`Select coupon ${row.code}`}
+        />
+      ),
+      className: "w-12",
+    },
     {
       key: "code",
       header: "Coupon Code",
@@ -159,11 +268,31 @@ export default function CouponsPage() {
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
           <h2 className="text-lg font-semibold">All Coupons</h2>
-          <Button className="bg-[#28acc1] hover:bg-[#1e8a9a]" onClick={() => router.push("/dashboard/coupons/add")}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Coupon
-          </Button>
+          <div className="flex gap-2">
+            {selectedCoupons.length > 0 && (
+              <Button variant="destructive" onClick={confirmBulkDeleteCoupons} className="flex items-center">
+                <Trash className="mr-2 h-4 w-4" />
+                Delete Selected ({selectedCoupons.length})
+              </Button>
+            )}
+            <Button className="bg-[#28acc1] hover:bg-[#1e8a9a]" onClick={() => router.push("/dashboard/coupons/add")}>
+              <Plus className="mr-2 h-4 w-4" />
+              Add Coupon
+            </Button>
+          </div>
         </div>
+
+        {selectedCoupons.length > 0 && (
+          <div className="bg-muted/50 p-2 rounded-md mb-4 flex justify-between items-center">
+            <span className="text-sm font-medium">
+              {selectedCoupons.length} {selectedCoupons.length === 1 ? "coupon" : "coupons"} selected
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedCoupons([])} className="h-8 px-2">
+              <X className="h-4 w-4 mr-1" />
+              Clear selection
+            </Button>
+          </div>
+        )}
 
         <DataTable
           columns={columns}
@@ -174,7 +303,7 @@ export default function CouponsPage() {
           loading={loading}
         />
 
-        {/* Add the confirmation dialog here */}
+        {/* Single Coupon Delete Confirmation Dialog */}
         <ConfirmationDialog
           open={deleteDialogOpen}
           onOpenChange={setDeleteDialogOpen}
@@ -185,6 +314,45 @@ export default function CouponsPage() {
           cancelText="Cancel"
           variant="destructive"
         />
+
+        {/* Bulk Delete Confirmation Dialog */}
+        <ConfirmationDialog
+          open={bulkDeleteDialogOpen}
+          onOpenChange={(open) => {
+            if (!isBulkDeleting) setBulkDeleteDialogOpen(open)
+          }}
+          title="Delete Multiple Coupons"
+          description={`Are you sure you want to delete ${selectedCoupons.length} selected coupons? This action cannot be undone.`}
+          onConfirm={handleBulkDeleteCoupons}
+          confirmText={isBulkDeleting ? "Deleting..." : "Delete All"}
+          cancelText="Cancel"
+          variant="destructive"
+        >
+          {isBulkDeleting && (
+            <div className="my-4 space-y-2">
+              <Progress value={bulkDeleteProgress} className="h-2" />
+              <div className="flex justify-between text-sm text-muted-foreground">
+                <span>Progress: {bulkDeleteProgress}%</span>
+                <span>
+                  {bulkDeleteStatus.success} successful, {bulkDeleteStatus.failed} failed
+                </span>
+              </div>
+            </div>
+          )}
+
+          {bulkDeleteErrors.length > 0 && (
+            <div className="mt-4 max-h-40 overflow-y-auto">
+              <h4 className="text-sm font-medium mb-2 text-destructive">Failed to delete:</h4>
+              <ul className="text-sm space-y-1">
+                {bulkDeleteErrors.map((error, index) => (
+                  <li key={index} className="text-muted-foreground">
+                    <span className="font-medium">{error.code}</span>: {error.error}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </ConfirmationDialog>
       </div>
     </div>
   )

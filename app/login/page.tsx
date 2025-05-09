@@ -69,7 +69,19 @@ export default function LoginPage() {
           }
         }, 500)
       } else {
-        setError(result.error || "Login failed. Please check your credentials.")
+        // Check for specific error messages related to invalid credentials
+        if (
+          result.error?.toLowerCase().includes("invalid") ||
+          result.error?.toLowerCase().includes("incorrect") ||
+          result.error?.toLowerCase().includes("wrong") ||
+          result.error?.toLowerCase().includes("not found") ||
+          result.error?.toLowerCase().includes("unauthorized") ||
+          result.error?.toLowerCase().includes("failed")
+        ) {
+          setError("Invalid credentials. Please check your email and password.")
+        } else {
+          setError(result.error || "Login failed. Please try again.")
+        }
       }
     } catch (err) {
       console.error("Login error:", err)
@@ -86,7 +98,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1 flex flex-col items-center">
           <div className="w-40 h-40 relative mb-4">
-            <img src="/tp-logo-black-color.webp" alt="TealParrot Logo" className="object-contain w-full h-full" />
+            <img src="/tp-logo-color.webp" alt="TealParrot Logo" className="object-contain w-full h-full" />
           </div>
           <CardTitle className="text-2xl font-bold text-center">Admin Login</CardTitle>
           <CardDescription className="text-center">Enter your credentials to access the admin panel</CardDescription>

@@ -27,6 +27,7 @@ export default function AddCouponPage() {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState({})
+  const [calendarOpen, setCalendarOpen] = useState({ from: false, until: false })
 
   const router = useRouter()
   const { toast } = useToast()
@@ -144,6 +145,20 @@ export default function AddCouponPage() {
     }
   }
 
+  // Handle calendar open/close
+  const handleCalendarOpenChange = (field, isOpen) => {
+    setCalendarOpen((prev) => ({ ...prev, [field]: isOpen }))
+  }
+
+  // Handle date selection
+  const handleDateSelect = (field, date) => {
+    setFormData((prev) => ({ ...prev, [field]: date }))
+    // Don't close the popover immediately to prevent accidental form submission
+    setTimeout(() => {
+      setCalendarOpen((prev) => ({ ...prev, [field]: false }))
+    }, 100)
+  }
+
   return (
     <div>
       <Header title="Add Coupon" />
@@ -198,23 +213,28 @@ export default function AddCouponPage() {
                     <Label htmlFor="validFrom" className={errors.validFrom ? "text-destructive" : ""}>
                       Valid From *
                     </Label>
-                    <Popover>
+                    <Popover open={calendarOpen.from} onOpenChange={(open) => handleCalendarOpenChange("from", open)}>
                       <PopoverTrigger asChild>
                         <Button
+                          type="button" // Explicitly set type to button to prevent form submission
                           variant="outline"
                           className={`w-full justify-start text-left font-normal ${
                             errors.validFrom ? "border-destructive" : ""
                           }`}
+                          onClick={(e) => {
+                            e.preventDefault() // Prevent any default behavior
+                            handleCalendarOpenChange("from", !calendarOpen.from)
+                          }}
                         >
                           <Calendar className="mr-2 h-4 w-4" />
                           {formData.validFrom ? format(formData.validFrom, "PPP") : "Select date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                      <PopoverContent className="w-auto p-0" onClick={(e) => e.stopPropagation()}>
                         <CalendarComponent
                           mode="single"
                           selected={formData.validFrom}
-                          onSelect={(date) => setFormData((prev) => ({ ...prev, validFrom: date }))}
+                          onSelect={(date) => date && handleDateSelect("validFrom", date)}
                           initialFocus
                         />
                       </PopoverContent>
@@ -226,23 +246,28 @@ export default function AddCouponPage() {
                     <Label htmlFor="validUntil" className={errors.validUntil ? "text-destructive" : ""}>
                       Valid Until *
                     </Label>
-                    <Popover>
+                    <Popover open={calendarOpen.until} onOpenChange={(open) => handleCalendarOpenChange("until", open)}>
                       <PopoverTrigger asChild>
                         <Button
+                          type="button" // Explicitly set type to button to prevent form submission
                           variant="outline"
                           className={`w-full justify-start text-left font-normal ${
                             errors.validUntil ? "border-destructive" : ""
                           }`}
+                          onClick={(e) => {
+                            e.preventDefault() // Prevent any default behavior
+                            handleCalendarOpenChange("until", !calendarOpen.until)
+                          }}
                         >
                           <Calendar className="mr-2 h-4 w-4" />
                           {formData.validUntil ? format(formData.validUntil, "PPP") : "Select date"}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0">
+                      <PopoverContent className="w-auto p-0" onClick={(e) => e.stopPropagation()}>
                         <CalendarComponent
                           mode="single"
                           selected={formData.validUntil}
-                          onSelect={(date) => setFormData((prev) => ({ ...prev, validUntil: date }))}
+                          onSelect={(date) => date && handleDateSelect("validUntil", date)}
                           initialFocus
                         />
                       </PopoverContent>

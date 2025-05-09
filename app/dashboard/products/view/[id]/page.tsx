@@ -6,11 +6,15 @@ import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Edit, Trash, Percent, Package } from "lucide-react"
+import { ArrowLeft, Edit, Trash, Percent, Package, Copy } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
 import { DiscountManagementModal } from "@/components/products/discount-management-modal"
+import { DuplicationModal, type DuplicationOptions } from "@/components/products/duplication-modal"
+import { uploadFiles } from "@/lib/upload"
+import { downloadAndProcessImages } from "@/lib/image-utils"
+import { Progress } from "@/components/ui/progress"
 
 export default function ProductDetailsPage({ params }) {
   const productId = params.id
@@ -18,6 +22,9 @@ export default function ProductDetailsPage({ params }) {
   const [loading, setLoading] = useState(true)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [discountModalOpen, setDiscountModalOpen] = useState(false)
+  const [duplicationModalOpen, setDuplicationModalOpen] = useState(false)
+  const [duplicating, setDuplicating] = useState(false)
+  const [imageProgress, setImageProgress] = useState({ current: 0, total: 0 })
 
   const router = useRouter()
   const { toast } = useToast()
@@ -86,6 +93,323 @@ export default function ProductDetailsPage({ params }) {
     setDiscountModalOpen(true)
   }
 
+  const openDuplicationModal = () => {
+    setDuplicationModalOpen(true)
+  }
+
+  // Calculate discount percentage
+  const calculateDiscountPercentage = (originalPrice, price) => {
+    if (!originalPrice || originalPrice <= price) return 0
+    return Math.round(((originalPrice - price) / originalPrice) * 100)
+  }
+
+  // Apply discount to the newly created product using the correct API endpoint
+  const applyDiscountToProduct = async (productId, discountPercentage) => {
+    try {
+      if (!productId || !discountPercentage || discountPercentage <= 0) {
+        console.log("No discount to apply")
+        return { success: true }
+      }
+
+      const discountData = {
+        productId: productId,
+        discountPercentage: discountPercentage.toString(),
+      }
+
+      console.log("Applying discount:", discountData)
+
+      const response = await fetchApi("/api/v1/admin/product/add-discount", {
+        method: "POST",
+        body: JSON.stringify(discountData),
+      })
+
+      console.log("Discount application response:", response)
+      return response
+    } catch (error) {
+      console.error("Failed to apply discount:", error)
+      throw new Error(`Failed to apply discount: ${error.message || "Unknown error"}`)
+    }
+  }
+
+  // Enhanced function to handle product duplication with options
+  const handleDuplicateProduct = async (options: DuplicationOptions) => {
+    try {
+      setDuplicating(true)
+      setImageProgress({ current: 0, total: 0 })
+
+      // Show initial toast
+      const loadingToast = toast({
+        title: "Duplicating Product",
+        description: "Starting duplication process...",
+      })
+
+      // Fetch categories, materials, and grades to ensure we have the correct IDs
+      const [categoriesResponse, materialsResponse, gradesResponse] = await Promise.all([
+        fetchApi("/api/v1/category/cat-list/"),
+        fetchApi("/api/v1/material/mat-list/"),
+        fetchApi("/api/v1/grade/gra-list/"),
+      ])
+
+      // Update toast
+      toast({
+        id: loadingToast,
+        title: "Duplicating Product",
+        description: "Fetching reference data...",
+      })
+
+      const categoriesData = categoriesResponse.data || []
+      const materialsData = materialsResponse.data || []
+      const gradesData = gradesResponse.data || []
+
+      // Helper function to find ID by name
+      const findIdByName = (array, nameKey, nameValue) => {
+        if (!array || !Array.isArray(array) || !nameValue) return ""
+        const item = array.find((item) => item[nameKey] === nameValue)
+        return item ? item._id : ""
+      }
+
+      // Determine category ID - handle both object and string cases
+      let categoryId
+      if (typeof product.category === "object" && product.category?._id) {
+        categoryId = product.category._id
+      } else if (typeof product.category === "string") {
+        // If it's already an ID (24 char hex string)
+        if (product.category.match(/^[0-9a-fA-F]{24}$/)) {
+          categoryId = product.category
+        } else {
+          // It's a name, look up the ID
+          categoryId = findIdByName(categoriesData, "name", product.category)
+        }
+      }
+
+      // Determine material ID - handle both object and string cases
+      let materialId
+      if (typeof product.material === "object" && product.material?._id) {
+        materialId = product.material._id
+      } else if (typeof product.material === "string") {
+        // If it's already an ID (24 char hex string)
+        if (product.material.match(/^[0-9a-fA-F]{24}$/)) {
+          materialId = product.material
+        } else {
+          // It's a name, look up the ID
+          materialId = findIdByName(materialsData, "material", product.material)
+        }
+      }
+
+      // Determine grade ID - handle both object and string cases
+      let gradeId
+      if (typeof product.grade === "object" && product.grade?._id) {
+        gradeId = product.grade._id
+      } else if (typeof product.grade === "string") {
+        // If it's already an ID (24 char hex string)
+        if (product.grade.match(/^[0-9a-fA-F]{24}$/)) {
+          gradeId = product.grade
+        } else {
+          // It's a name, look up the ID
+          gradeId = findIdByName(gradesData, "grade", product.grade)
+        }
+      }
+
+      console.log("Mapped IDs for duplication:", { categoryId, materialId, gradeId })
+
+      // Calculate original price and discount
+      const originalPrice = product.originalPrice || product.price
+      const currentPrice = product.price
+      const originalStock = product.stock || 0
+      const originalDiscountPercentage = calculateDiscountPercentage(originalPrice, currentPrice)
+
+      // Get the image URLs to download and re-upload
+      const imageUrls = product.images || []
+
+      // Update toast for image processing
+      toast({
+        id: loadingToast,
+        title: "Duplicating Product",
+        description: `Processing ${imageUrls.length} images...`,
+      })
+
+      // Set total images for progress tracking
+      setImageProgress({ current: 0, total: imageUrls.length })
+
+      // Download and process images with progress tracking
+      const imageFiles = await downloadAndProcessImages(imageUrls, (current, total) => {
+        setImageProgress({ current, total })
+        toast({
+          id: loadingToast,
+          title: "Duplicating Product",
+          description: `Processing images (${current}/${total})...`,
+        })
+      })
+
+      // Handle size variations if selected
+      if (options.createSizeVariations && options.sizeVariations && options.sizeVariations.length > 0) {
+        toast({
+          id: loadingToast,
+          title: "Duplicating Product",
+          description: `Creating ${options.sizeVariations.length} size variations...`,
+        })
+
+        // Create each size variation
+        const createdProducts = []
+        for (let i = 0; i < options.sizeVariations.length; i++) {
+          const variation = options.sizeVariations[i]
+
+          // Create a new product object for this size variation
+          const sizeVariationProduct = {
+            name: product.name, // Keep original name
+            description: product.description,
+            stock: variation.stock, // Use the stock from the variation
+            category: categoryId,
+            material: materialId,
+            grade: gradeId,
+            price: variation.price, // Use the price from the variation
+            gem: product.gem,
+            coating: product.coating,
+            size: variation.size, // Use the size from the variation
+          }
+
+          toast({
+            id: loadingToast,
+            title: "Duplicating Product",
+            description: `Creating size variation ${i + 1}/${options.sizeVariations.length}: ${variation.size}...`,
+          })
+
+          // Create the new product with the duplicated data and images
+          const result = await uploadFiles(imageFiles, sizeVariationProduct)
+
+          if (!result.success) {
+            throw new Error(`Failed to create size variation ${variation.size}: ${result.message || "Unknown error"}`)
+          }
+
+          // Extract the new product ID from the nested response structure
+          const newProductId = result.data?.data?._id
+          if (!newProductId) {
+            console.error("Product creation response:", result)
+            throw new Error(
+              `New product ID not found in response for size ${variation.size}. Check console for details.`,
+            )
+          }
+
+          console.log(`Size variation ${variation.size} created with ID:`, newProductId)
+
+          // Apply discount if needed
+          if (variation.discountPercentage > 0) {
+            toast({
+              id: loadingToast,
+              title: "Duplicating Product",
+              description: `Applying ${variation.discountPercentage}% discount to size ${variation.size}...`,
+            })
+
+            const discountResult = await applyDiscountToProduct(newProductId, variation.discountPercentage)
+
+            if (!discountResult.success) {
+              throw new Error(
+                `Failed to apply discount to size ${variation.size}: ${discountResult.message || "Unknown error"}`,
+              )
+            }
+          }
+
+          createdProducts.push({
+            id: newProductId,
+            size: variation.size,
+            discountPercentage: variation.discountPercentage,
+          })
+        }
+
+        toast({
+          id: loadingToast,
+          title: "Success",
+          description: `Created ${createdProducts.length} size variations successfully`,
+          variant: "default",
+        })
+
+        // Navigate to products list to see all created variations
+        router.push("/dashboard/products")
+      } else {
+        // Standard duplication (single product)
+        // Determine values based on user choice
+        const productName = `${product.name} (Copy)`
+        const productPrice = options.applySamePrice ? originalPrice : options.customPrice
+        const discountPercentage = options.applySameDiscount
+          ? originalDiscountPercentage
+          : options.customDiscountPercentage
+        const stockLevel = options.applySameStock ? originalStock : options.customStock
+
+        // Create a new product object with the duplicated data
+        const duplicatedProduct = {
+          name: productName,
+          description: product.description,
+          stock: stockLevel,
+          category: categoryId,
+          material: materialId,
+          grade: gradeId,
+          price: productPrice, // Use the price from options
+          gem: product.gem,
+          coating: product.coating,
+          size: product.size,
+        }
+
+        // Update toast for upload
+        toast({
+          id: loadingToast,
+          title: "Duplicating Product",
+          description: `Uploading new product with ${imageFiles.length} images...`,
+        })
+
+        // Create the new product with the duplicated data and images
+        const result = await uploadFiles(imageFiles, duplicatedProduct)
+
+        if (!result.success) {
+          throw new Error(result.message || "Failed to create duplicated product")
+        }
+
+        // Extract the new product ID from the nested response structure
+        const newProductId = result.data?.data?._id
+        if (!newProductId) {
+          console.error("Product creation response:", result)
+          throw new Error("New product ID not found in response. Check console for details.")
+        }
+
+        console.log("New product created with ID:", newProductId)
+
+        // Apply discount if needed
+        if (discountPercentage > 0) {
+          toast({
+            id: loadingToast,
+            title: "Duplicating Product",
+            description: `Applying ${discountPercentage}% discount to duplicated product...`,
+          })
+
+          const discountResult = await applyDiscountToProduct(newProductId, discountPercentage)
+
+          if (!discountResult.success) {
+            throw new Error(discountResult.message || "Failed to apply discount to duplicated product")
+          }
+        }
+
+        toast({
+          id: loadingToast,
+          title: "Success",
+          description: "Product duplicated successfully",
+          variant: "default",
+        })
+
+        // Navigate to the new product
+        router.push(`/dashboard/products/view/${newProductId}`)
+      }
+    } catch (error) {
+      console.error("Duplication error:", error)
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: `Failed to duplicate product: ${error.message || "Unknown error"}`,
+      })
+    } finally {
+      setDuplicating(false)
+      setImageProgress({ current: 0, total: 0 })
+    }
+  }
+
   if (loading) {
     return (
       <div>
@@ -147,10 +471,10 @@ export default function ProductDetailsPage({ params }) {
     return formatted
   }
 
-  // Calculate discount percentage
-  const calculateDiscountPercentage = () => {
-    if (!product.discountPrice || product.discountPrice >= product.price) return 0
-    return Math.round(((product.price - product.discountPrice) / product.price) * 100)
+  // Calculate discount percentage for display
+  const getDiscountPercentage = () => {
+    if (!product.originalPrice || product.originalPrice <= product.price) return 0
+    return Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
   }
 
   return (
@@ -185,11 +509,9 @@ export default function ProductDetailsPage({ params }) {
                       {product.images && product.images.length > 0 ? (
                         product.images.map((image, index) => (
                           <div key={index} className="aspect-square border rounded-md overflow-hidden">
-                            <img
-                              src={image || "/placeholder.svg"}
-                              alt={`${product.name} - Image ${index + 1}`}
-                              className="w-full h-full object-cover"
-                            />
+                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                              <Package className="h-12 w-12 text-gray-400" />
+                            </div>
                           </div>
                         ))
                       ) : (
@@ -206,13 +528,11 @@ export default function ProductDetailsPage({ params }) {
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Price:</dt>
                         <dd className="text-right">
-                          {product.discountPrice ? (
+                          {product.originalPrice ? (
                             <div>
-                              <span className="line-through text-gray-500 mr-2">₹{product.price}</span>
-                              <span className="font-bold">₹{product.discountPrice}</span>
-                              <span className="ml-2 text-green-600 text-sm">
-                                ({calculateDiscountPercentage()}% off)
-                              </span>
+                              <span className="line-through text-gray-500 mr-2">₹{product.originalPrice}</span>
+                              <span className="font-bold">₹{product.price}</span>
+                              <span className="ml-2 text-green-600 text-sm">({getDiscountPercentage()}% off)</span>
                             </div>
                           ) : (
                             <span className="font-bold">₹{product.price}</span>
@@ -225,15 +545,15 @@ export default function ProductDetailsPage({ params }) {
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Category:</dt>
-                        <dd className="text-right">{product.category || "Uncategorized"}</dd>
+                        <dd className="text-right">{product.category?.name || "Uncategorized"}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Material:</dt>
-                        <dd className="text-right">{product.material || "Not specified"}</dd>
+                        <dd className="text-right">{product.material?.material || "Not specified"}</dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Grade:</dt>
-                        <dd className="text-right">{product.grade || "Not specified"}</dd>
+                        <dd className="text-right">{product.grade?.grade || "Not specified"}</dd>
                       </div>
                       {product.gem && (
                         <div className="flex justify-between">
@@ -281,9 +601,35 @@ export default function ProductDetailsPage({ params }) {
                   Edit Product
                 </Button>
 
+                <Button variant="outline" className="w-full" onClick={openDuplicationModal} disabled={duplicating}>
+                  {duplicating ? (
+                    <>
+                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                      Duplicating...
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="mr-2 h-4 w-4" />
+                      Duplicate Product
+                    </>
+                  )}
+                </Button>
+
+                {duplicating && imageProgress.total > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Processing images</span>
+                      <span>
+                        {imageProgress.current} of {imageProgress.total}
+                      </span>
+                    </div>
+                    <Progress value={(imageProgress.current / imageProgress.total) * 100} />
+                  </div>
+                )}
+
                 <Button variant="outline" className="w-full" onClick={openDiscountModal}>
                   <Percent className="mr-2 h-4 w-4" />
-                  {product.discountPrice ? "Manage Discount" : "Add Discount"}
+                  {product.originalPrice ? "Manage Discount" : "Add Discount"}
                 </Button>
 
                 <Button variant="destructive" className="w-full" onClick={confirmDeleteProduct}>
@@ -344,6 +690,17 @@ export default function ProductDetailsPage({ params }) {
             onOpenChange={setDiscountModalOpen}
             product={product}
             onSuccess={fetchProductDetails}
+          />
+        )}
+
+        {/* Duplication Modal */}
+        {product && (
+          <DuplicationModal
+            open={duplicationModalOpen}
+            onOpenChange={setDuplicationModalOpen}
+            product={product}
+            onDuplicate={handleDuplicateProduct}
+            onCancel={() => {}}
           />
         )}
       </div>

@@ -14,11 +14,21 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import { Plus, Pencil, Trash } from "lucide-react"
+import { Plus, Pencil, Trash, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { DataTable } from "@/components/ui/data-table"
-import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 export default function CategoriesPage() {
   const [categories, setCategories] = useState([])
@@ -28,9 +38,16 @@ export default function CategoriesPage() {
   const [categoryName, setCategoryName] = useState("")
   const [editCategoryId, setEditCategoryId] = useState(null)
   const [nameError, setNameError] = useState("")
+  const { toast } = useToast()
+
+  // State for deletion dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [categoryToDelete, setCategoryToDelete] = useState(null)
-  const { toast } = useToast()
+  const [categoryToDeleteName, setCategoryToDeleteName] = useState("")
+  const [categoryProductCount, setCategoryProductCount] = useState(0)
+
+  // Track loading state for individual product counts
+  const [productCountsLoading, setProductCountsLoading] = useState({})
 
   useEffect(() => {
     fetchCategories()
@@ -43,37 +60,87 @@ export default function CategoriesPage() {
       // Updated to match the API response structure
       const categoriesData = response.data || []
 
-      // Fetch product counts for each category
-      const categoriesWithCounts = await Promise.all(
-        categoriesData.map(async (category) => {
-          try {
-            const productResponse = await fetchApi(`/api/v1/product/list/?categoryId=${category._id}`)
-            const products = productResponse.data?.products || productResponse.products || []
-            return {
-              ...category,
-              productCount: products.length,
-            }
-          } catch (error) {
-            console.error(`Error fetching products for category ${category.name}:`, error)
-            return {
-              ...category,
-              productCount: 0,
-            }
-          }
-        }),
-      )
+      // Initialize categories with zero product counts
+      const categoriesWithCounts = categoriesData.map((category) => ({
+        ...category,
+        productCount: 0,
+        isCountLoading: true,
+      }))
 
       setCategories(categoriesWithCounts)
+
+      // Fetch product counts for each category
+      await fetchProductCounts(categoriesWithCounts)
     } catch (error) {
+      console.error("Failed to fetch categories:", error)
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch categories",
+        description: "Failed to fetch categories: " + (error.message || "Unknown error"),
       })
       setCategories([])
     } finally {
       setLoading(false)
     }
+  }
+
+  const fetchProductCounts = async (categoriesData) => {
+    // Create a new object to track loading states
+    const loadingStates = {}
+    categoriesData.forEach((category) => {
+      loadingStates[category._id] = true
+    })
+    setProductCountsLoading(loadingStates)
+
+    // Create a copy of the categories array to update with product counts
+    const updatedCategories = [...categoriesData]
+
+    // Fetch product counts for each category
+    const countPromises = updatedCategories.map(async (category, index) => {
+      try {
+        const response = await fetchApi(`/api/v1/product/list/?categoryId=${category._id}`)
+
+        // Extract product count from the correct path in the response
+        const productCount = response.data?.products?.length || 0
+
+        console.log(`Category ${category.name} (${category._id}) has ${productCount} products`)
+
+        // Update the category with the product count
+        updatedCategories[index] = {
+          ...category,
+          productCount: productCount,
+          isCountLoading: false,
+        }
+
+        // Update loading state for this category
+        setProductCountsLoading((prev) => ({
+          ...prev,
+          [category._id]: false,
+        }))
+      } catch (error) {
+        console.error(`Failed to fetch product count for category ${category.name}:`, error)
+
+        // If there's an error, set product count to 0
+        updatedCategories[index] = {
+          ...category,
+          productCount: 0,
+          isCountLoading: false,
+          countError: true,
+        }
+
+        // Update loading state for this category
+        setProductCountsLoading((prev) => ({
+          ...prev,
+          [category._id]: false,
+        }))
+      }
+    })
+
+    // Wait for all count fetches to complete
+    await Promise.all(countPromises)
+
+    // Update the categories state with the product counts
+    setCategories(updatedCategories)
   }
 
   const validateCategoryName = () => {
@@ -137,12 +204,64 @@ export default function CategoriesPage() {
     }
   }
 
-  const confirmDeleteCategory = (categoryId) => {
-    setCategoryToDelete(categoryId)
-    setDeleteDialogOpen(true)
+  const confirmDeleteCategory = async (category) => {
+    try {
+      // Set loading state for this specific check
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [category._id]: true,
+      }))
+
+      // Fetch products associated with this category
+      const response = await fetchApi(`/api/v1/product/list/?categoryId=${category._id}`)
+
+      // Extract product count from the correct path in the response
+      const productCount = response.data?.products?.length || 0
+
+      console.log(`Checking deletion for category ${category.name} (${category._id}): ${productCount} products found`)
+
+      // Update loading state
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [category._id]: false,
+      }))
+
+      // Store the category info and product count
+      setCategoryToDelete(category._id)
+      setCategoryToDeleteName(category.name)
+      setCategoryProductCount(productCount)
+
+      // Open the confirmation dialog
+      setDeleteDialogOpen(true)
+    } catch (error) {
+      console.error(`Failed to check products for category ${category.name}:`, error)
+
+      // Update loading state
+      setProductCountsLoading((prev) => ({
+        ...prev,
+        [category._id]: false,
+      }))
+
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Failed to check associated products: " + (error.message || "Unknown error"),
+      })
+    }
   }
 
   const handleDeleteCategory = async () => {
+    // If there are associated products, don't allow deletion
+    if (categoryProductCount > 0) {
+      setDeleteDialogOpen(false)
+      toast({
+        variant: "destructive",
+        title: "Cannot Delete Category",
+        description: `This category has ${categoryProductCount} associated products. Please reassign or delete these products first.`,
+      })
+      return
+    }
+
     try {
       await fetchApi("/api/v1/admin/category/remove", {
         method: "DELETE",
@@ -159,11 +278,13 @@ export default function CategoriesPage() {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to delete category",
+        description: "Failed to delete category: " + (error.message || "Unknown error"),
       })
     } finally {
       setDeleteDialogOpen(false)
       setCategoryToDelete(null)
+      setCategoryToDeleteName("")
+      setCategoryProductCount(0)
     }
   }
 
@@ -182,7 +303,18 @@ export default function CategoriesPage() {
     {
       key: "productCount",
       header: "Products",
-      cell: (row) => row.productCount || 0,
+      cell: (row) => (
+        <div className="flex items-center">
+          {productCountsLoading[row._id] ? (
+            <div className="flex items-center">
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <span className="text-muted-foreground">Loading...</span>
+            </div>
+          ) : (
+            <span className="font-medium">{row.productCount || 0}</span>
+          )}
+        </div>
+      ),
     },
     {
       key: "actions",
@@ -202,11 +334,15 @@ export default function CategoriesPage() {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => confirmDeleteCategory(row._id)}
+            onClick={() => confirmDeleteCategory(row)}
             className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
             title="Delete Category"
           >
-            <Trash className="h-4 w-4" />
+            {productCountsLoading[row._id] ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Trash className="h-4 w-4" />
+            )}
             <span className="sr-only">Delete</span>
           </Button>
         </div>
@@ -306,17 +442,65 @@ export default function CategoriesPage() {
           loading={loading}
         />
 
-        {/* Delete Confirmation Dialog */}
-        <ConfirmationDialog
-          open={deleteDialogOpen}
-          onOpenChange={setDeleteDialogOpen}
-          title="Delete Category"
-          description="Are you sure you want to delete this category? This action cannot be undone and may affect products associated with this category."
-          onConfirm={handleDeleteCategory}
-          confirmText="Delete"
-          cancelText="Cancel"
-          variant="destructive"
-        />
+        {/* Completely separate dialogs for different cases */}
+        {categoryProductCount > 0 ? (
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Cannot Delete Category</AlertDialogTitle>
+              </AlertDialogHeader>
+
+              <div className="py-3">
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Action Not Allowed</AlertTitle>
+                  <AlertDescription>
+                    There are {categoryProductCount} active products under this category. Delete or reassign these
+                    products to a different category to delete this category.
+                  </AlertDescription>
+                </Alert>
+
+                <div className="mt-4 space-y-2">
+                  <p className="font-medium">To delete this category, you must first:</p>
+                  <ol className="list-decimal pl-5 space-y-1">
+                    <li>Go to the Products page</li>
+                    <li>Reassign or delete products under this category</li>
+                    <li>Return to this page and try deleting the category again</li>
+                  </ol>
+                </div>
+              </div>
+
+              <AlertDialogFooter>
+                <AlertDialogAction asChild>
+                  <Button variant="default" onClick={() => setDeleteDialogOpen(false)}>
+                    Close
+                  </Button>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        ) : (
+          <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete Category</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Are you sure you want to delete the category "{categoryToDeleteName}"? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel asChild>
+                  <Button variant="outline">Cancel</Button>
+                </AlertDialogCancel>
+                <AlertDialogAction asChild>
+                  <Button variant="destructive" onClick={handleDeleteCategory}>
+                    Delete
+                  </Button>
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
     </div>
   )

@@ -15,11 +15,13 @@ interface ConfirmationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  description: string
+  description?: string
+  children?: React.ReactNode
   onConfirm: () => void
   confirmText?: string
   cancelText?: string
   variant?: "default" | "destructive"
+  showCancel?: boolean
 }
 
 export function ConfirmationDialog({
@@ -27,22 +29,32 @@ export function ConfirmationDialog({
   onOpenChange,
   title,
   description,
+  children,
   onConfirm,
   confirmText = "Confirm",
   cancelText = "Cancel",
   variant = "default",
+  showCancel = true,
 }: ConfirmationDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          {description && <AlertDialogDescription>{description}</AlertDialogDescription>}
         </AlertDialogHeader>
+        
+        {/* Render children outside of AlertDialogDescription */}
+        {children && <div className="py-2">{children}</div>}
+        
         <AlertDialogFooter>
-          <AlertDialogCancel asChild>
-            <Button variant="outline">{cancelText}</Button>
-          </AlertDialogCancel>
+          {showCancel && (
+            <AlertDialogCancel asChild>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {cancelText}
+              </Button>
+            </AlertDialogCancel>
+          )}
           <AlertDialogAction asChild>
             <Button
               variant={variant === "destructive" ? "destructive" : "default"}

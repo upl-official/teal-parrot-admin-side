@@ -12,11 +12,10 @@ import {
   ShoppingCart,
   Users,
   Ticket,
-  Percent,
-  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
+  Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -46,6 +45,7 @@ export default function Sidebar() {
     return () => window.removeEventListener("resize", handleResize)
   }, [])
 
+  // Update the menuItems array to remove the Discounts item and ensure Settings is properly linked
   const menuItems = [
     { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
     { icon: Package, label: "Products", href: "/dashboard/products" },
@@ -55,8 +55,7 @@ export default function Sidebar() {
     { icon: ShoppingCart, label: "Orders", href: "/dashboard/orders" },
     { icon: Users, label: "Profiles", href: "/dashboard/profiles" },
     { icon: Ticket, label: "Coupons", href: "/dashboard/coupons" },
-    { icon: Percent, label: "Discounts", href: "/dashboard/discounts" },
-    { icon: Settings, label: "Settings", href: "/dashboard/settings" },
+    { icon: Lock, label: "Account Security", href: "/dashboard/settings" },
   ]
 
   const toggleSidebar = () => {
@@ -94,11 +93,7 @@ export default function Sidebar() {
             {!collapsed && (
               <div className="flex justify-center">
                 <div className="relative w-36 h-10 flex items-center">
-                  <img
-                    src="/tp-logo-color.webp"
-                    alt="Teal Parrot Logo"
-                    className="h-18 w-auto object-contain"
-                  />
+                  <img src="/tp-logo-color.webp" alt="Teal Parrot Logo" className="h-18 w-auto object-contain" />
                 </div>
               </div>
             )}
