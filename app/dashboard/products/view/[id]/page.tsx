@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Edit, Trash, Percent, Package, Copy } from "lucide-react"
+import { ArrowLeft, Edit, Trash, Percent, Copy } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
@@ -25,6 +26,7 @@ export default function ProductDetailsPage({ params }) {
   const [duplicationModalOpen, setDuplicationModalOpen] = useState(false)
   const [duplicating, setDuplicating] = useState(false)
   const [imageProgress, setImageProgress] = useState({ current: 0, total: 0 })
+  const [imageErrors, setImageErrors] = useState({})
 
   const router = useRouter()
   const { toast } = useToast()
@@ -129,6 +131,14 @@ export default function ProductDetailsPage({ params }) {
       console.error("Failed to apply discount:", error)
       throw new Error(`Failed to apply discount: ${error.message || "Unknown error"}`)
     }
+  }
+
+  // Handle image loading error
+  const handleImageError = (index) => {
+    setImageErrors((prev) => ({
+      ...prev,
+      [index]: true,
+    }))
   }
 
   // Enhanced function to handle product duplication with options
@@ -477,6 +487,11 @@ export default function ProductDetailsPage({ params }) {
     return Math.round(((product.originalPrice - product.price) / product.originalPrice) * 100)
   }
 
+  // Function to get a placeholder image URL with the product name
+  const getPlaceholderImage = (index) => {
+    return `/placeholder.svg?height=200&width=200&query=Product ${product.name} ${index + 1}`
+  }
+
   return (
     <div>
       <Header title="Product Details" />
@@ -508,15 +523,36 @@ export default function ProductDetailsPage({ params }) {
                     <div className="grid grid-cols-2 gap-4">
                       {product.images && product.images.length > 0 ? (
                         product.images.map((image, index) => (
-                          <div key={index} className="aspect-square border rounded-md overflow-hidden">
-                            <div className="w-full h-full flex items-center justify-center bg-gray-100">
-                              <Package className="h-12 w-12 text-gray-400" />
-                            </div>
+                          <div key={index} className="aspect-square border rounded-md overflow-hidden bg-gray-50">
+                            {!imageErrors[index] ? (
+                              <Image
+                                src={image || "/placeholder.svg"}
+                                alt={`${product.name} - Image ${index + 1}`}
+                                width={200}
+                                height={200}
+                                className="w-full h-full object-cover"
+                                onError={() => handleImageError(index)}
+                              />
+                            ) : (
+                              <Image
+                                src={getPlaceholderImage(index) || "/placeholder.svg"}
+                                alt={`${product.name} - Image ${index + 1}`}
+                                width={200}
+                                height={200}
+                                className="w-full h-full object-cover"
+                              />
+                            )}
                           </div>
                         ))
                       ) : (
                         <div className="aspect-square border rounded-md flex items-center justify-center bg-gray-100">
-                          <Package className="h-12 w-12 text-gray-400" />
+                          <Image
+                            src={getPlaceholderImage(0) || "/placeholder.svg"}
+                            alt={product.name}
+                            width={200}
+                            height={200}
+                            className="w-full h-full object-cover"
+                          />
                         </div>
                       )}
                     </div>
@@ -545,15 +581,25 @@ export default function ProductDetailsPage({ params }) {
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Category:</dt>
-                        <dd className="text-right">{product.category?.name || "Uncategorized"}</dd>
+                        <dd className="text-right">
+                          {typeof product.category === "object"
+                            ? product.category?.name
+                            : product.category || "Uncategorized"}
+                        </dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Material:</dt>
-                        <dd className="text-right">{product.material?.material || "Not specified"}</dd>
+                        <dd className="text-right">
+                          {typeof product.material === "object"
+                            ? product.material?.material
+                            : product.material || "Not specified"}
+                        </dd>
                       </div>
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Grade:</dt>
-                        <dd className="text-right">{product.grade?.grade || "Not specified"}</dd>
+                        <dd className="text-right">
+                          {typeof product.grade === "object" ? product.grade?.grade : product.grade || "Not specified"}
+                        </dd>
                       </div>
                       {product.gem && (
                         <div className="flex justify-between">
@@ -641,7 +687,7 @@ export default function ProductDetailsPage({ params }) {
 
             <Card>
               <CardHeader>
-                <CardTitle>Product Stats</CardTitle>
+                <CardTitle>Product Timeline</CardTitle>
               </CardHeader>
               <CardContent>
                 <dl className="space-y-2">
@@ -656,14 +702,6 @@ export default function ProductDetailsPage({ params }) {
                     <dd className="text-right">
                       {product.updatedAt ? new Date(product.updatedAt).toLocaleDateString() : "N/A"}
                     </dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="font-medium text-muted-foreground">Views:</dt>
-                    <dd className="text-right">N/A</dd>
-                  </div>
-                  <div className="flex justify-between">
-                    <dt className="font-medium text-muted-foreground">Orders:</dt>
-                    <dd className="text-right">N/A</dd>
                   </div>
                 </dl>
               </CardContent>

@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Image from "next/image"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Plus, Pencil, Trash, Percent, Package, Eye, Copy, X, Check } from "lucide-react"
+import { Plus, Pencil, Trash, Percent, Eye, Copy, X, Check } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
@@ -40,6 +41,7 @@ export default function ProductsPage() {
   const [duplicating, setDuplicating] = useState(false)
   const [imageProgress, setImageProgress] = useState({ current: 0, total: 0 })
   const [groupBySize, setGroupBySize] = useState(true)
+  const [imageErrors, setImageErrors] = useState({})
 
   // Bulk deletion states
   const [selectedProducts, setSelectedProducts] = useState([])
@@ -253,6 +255,19 @@ export default function ProductsPage() {
       currency: "INR",
       maximumFractionDigits: 0,
     }).format(price)
+  }
+
+  // Handle image loading error
+  const handleImageError = (productId) => {
+    setImageErrors((prev) => ({
+      ...prev,
+      [productId]: true,
+    }))
+  }
+
+  // Function to get a placeholder image URL with the product name
+  const getPlaceholderImage = (product) => {
+    return `/placeholder.svg?height=40&width=40&query=Product ${product.name}`
   }
 
   // Bulk selection handlers
@@ -736,13 +751,17 @@ export default function ProductsPage() {
     {
       key: "category",
       header: "Category",
-      cell: (row) => <span>{row.category || "Uncategorized"}</span>,
+      cell: (row) => (
+        <span>{typeof row.category === "object" ? row.category?.name : row.category || "Uncategorized"}</span>
+      ),
       className: "hidden md:table-cell",
     },
     {
       key: "material",
       header: "Material",
-      cell: (row) => <span>{row.material || "Not specified"}</span>,
+      cell: (row) => (
+        <span>{typeof row.material === "object" ? row.material?.material : row.material || "Not specified"}</span>
+      ),
       className: "hidden md:table-cell",
     },
     {
@@ -863,8 +882,8 @@ export default function ProductsPage() {
   }
 
   // Function to get a placeholder image for products
-  const getPlaceholderImage = () => {
-    return "diverse-products-still-life.png"
+  const getProductPlaceholderImage = (product) => {
+    return `/placeholder.svg?height=40&width=40&query=Product ${product.name}`
   }
 
   return (
@@ -1003,7 +1022,7 @@ export default function ProductsPage() {
                     selectedProducts={selectedProducts}
                     onSelectProduct={toggleSelectProduct}
                     onSelectGroup={toggleSelectGroup}
-                    placeholderImage={getPlaceholderImage()}
+                    placeholderImage={getProductPlaceholderImage}
                   />
                 ))
               ) : (
@@ -1023,8 +1042,25 @@ export default function ProductsPage() {
                       />
                     </td>
                     <td className="p-2">
-                      <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-                        <Package className="h-5 w-5 text-gray-500" />
+                      <div className="h-10 w-10 rounded bg-gray-50 flex items-center justify-center overflow-hidden">
+                        {product.images && product.images.length > 0 && !imageErrors[product._id] ? (
+                          <Image
+                            src={product.images[0] || "/placeholder.svg"}
+                            alt={product.name}
+                            width={40}
+                            height={40}
+                            className="w-full h-full object-cover"
+                            onError={() => handleImageError(product._id)}
+                          />
+                        ) : (
+                          <Image
+                            src={getProductPlaceholderImage(product) || "/placeholder.svg"}
+                            alt={product.name}
+                            width={40}
+                            height={40}
+                            className="w-full h-full object-cover"
+                          />
+                        )}
                       </div>
                     </td>
                     {columns.map((column) => (

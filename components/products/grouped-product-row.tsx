@@ -1,10 +1,11 @@
 "use client"
 
 import { useState, useRef, useEffect } from "react"
+import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { ChevronDown, ChevronRight, Copy, Eye, Package, Pencil, Percent, Trash } from "lucide-react"
+import { ChevronDown, ChevronRight, Copy, Eye, Pencil, Percent, Trash } from "lucide-react"
 import { useRouter } from "next/navigation"
 
 export function GroupedProductRow({
@@ -23,6 +24,7 @@ export function GroupedProductRow({
   placeholderImage = "diverse-products-still-life.png",
 }) {
   const [expanded, setExpanded] = useState(false)
+  const [imageErrors, setImageErrors] = useState({})
   const router = useRouter()
   const checkboxRef = useRef(null)
 
@@ -41,6 +43,19 @@ export function GroupedProductRow({
       checkboxRef.current.indeterminate = someSelected
     }
   }, [someSelected])
+
+  // Handle image loading error
+  const handleImageError = (productId) => {
+    setImageErrors((prev) => ({
+      ...prev,
+      [productId]: true,
+    }))
+  }
+
+  // Function to get a placeholder image URL with the product name
+  const getPlaceholderImage = (product) => {
+    return `/placeholder.svg?height=40&width=40&query=Product ${product.name}`
+  }
 
   // Sort products by size for consistent display
   const sortedProducts = [...products].sort((a, b) => {
@@ -86,8 +101,25 @@ export function GroupedProductRow({
           </Button>
         </td>
         <td className="p-2">
-          <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-            <Package className="h-5 w-5 text-gray-500" />
+          <div className="h-10 w-10 rounded bg-gray-50 flex items-center justify-center overflow-hidden">
+            {mainProduct.images && mainProduct.images.length > 0 && !imageErrors[mainProduct._id] ? (
+              <Image
+                src={mainProduct.images[0] || "/placeholder.svg"}
+                alt={mainProduct.name}
+                width={40}
+                height={40}
+                className="w-full h-full object-cover"
+                onError={() => handleImageError(mainProduct._id)}
+              />
+            ) : (
+              <Image
+                src={getPlaceholderImage(mainProduct) || "/placeholder.svg"}
+                alt={mainProduct.name}
+                width={40}
+                height={40}
+                className="w-full h-full object-cover"
+              />
+            )}
           </div>
         </td>
         <td className="p-2">
@@ -97,10 +129,18 @@ export function GroupedProductRow({
           </div>
         </td>
         <td className="p-2 hidden md:table-cell">
-          <span>{mainProduct.category || "Uncategorized"}</span>
+          <span>
+            {typeof mainProduct.category === "object"
+              ? mainProduct.category?.name
+              : mainProduct.category || "Uncategorized"}
+          </span>
         </td>
         <td className="p-2 hidden md:table-cell">
-          <span>{mainProduct.material || "Not specified"}</span>
+          <span>
+            {typeof mainProduct.material === "object"
+              ? mainProduct.material?.material
+              : mainProduct.material || "Not specified"}
+          </span>
         </td>
         <td className="p-2">
           <div className="flex flex-col">
@@ -180,8 +220,25 @@ export function GroupedProductRow({
             </td>
             <td className="p-2"></td>
             <td className="p-2">
-              <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-                <Package className="h-5 w-5 text-gray-500" />
+              <div className="h-10 w-10 rounded bg-gray-50 flex items-center justify-center overflow-hidden">
+                {product.images && product.images.length > 0 && !imageErrors[product._id] ? (
+                  <Image
+                    src={product.images[0] || "/placeholder.svg"}
+                    alt={`${product.name} (${product.size || "No size"})`}
+                    width={40}
+                    height={40}
+                    className="w-full h-full object-cover"
+                    onError={() => handleImageError(product._id)}
+                  />
+                ) : (
+                  <Image
+                    src={getPlaceholderImage(product) || "/placeholder.svg"}
+                    alt={`${product.name} (${product.size || "No size"})`}
+                    width={40}
+                    height={40}
+                    className="w-full h-full object-cover"
+                  />
+                )}
               </div>
             </td>
             <td className="p-2">
