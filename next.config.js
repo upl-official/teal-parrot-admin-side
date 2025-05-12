@@ -31,6 +31,28 @@ const nextConfig = {
       bodySizeLimit: "2mb",
     },
   },
+  // Add HTTP headers to prevent indexing
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          {
+            key: "X-Robots-Tag",
+            value: "noindex, nofollow, noarchive, nositelinkssearchbox, nosnippet, notranslate, noimageindex",
+          },
+          {
+            key: "X-Content-Type-Options",
+            value: "nosniff",
+          },
+          {
+            key: "Referrer-Policy",
+            value: "strict-origin-when-cross-origin",
+          },
+        ],
+      },
+    ]
+  },
 }
 
 module.exports = nextConfig
