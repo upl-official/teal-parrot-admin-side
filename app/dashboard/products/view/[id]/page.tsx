@@ -7,7 +7,7 @@ import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft, Edit, Trash, Percent, Copy } from "lucide-react"
+import { ArrowLeft, Edit, Trash, Percent, Copy, Check, ExternalLink } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
@@ -16,6 +16,7 @@ import { DuplicationModal, type DuplicationOptions } from "@/components/products
 import { uploadFiles } from "@/lib/upload"
 import { downloadAndProcessImages } from "@/lib/image-utils"
 import { Progress } from "@/components/ui/progress"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 export default function ProductDetailsPage({ params }) {
   const productId = params.id
@@ -27,6 +28,9 @@ export default function ProductDetailsPage({ params }) {
   const [duplicating, setDuplicating] = useState(false)
   const [imageProgress, setImageProgress] = useState({ current: 0, total: 0 })
   const [imageErrors, setImageErrors] = useState({})
+  const [copied, setCopied] = useState(false)
+  const [relatedSizes, setRelatedSizes] = useState([])
+  const [loadingSizes, setLoadingSizes] = useState(false)
 
   const router = useRouter()
   const { toast } = useToast()
@@ -34,6 +38,22 @@ export default function ProductDetailsPage({ params }) {
   useEffect(() => {
     fetchProductDetails()
   }, [productId])
+
+  useEffect(() => {
+    if (product) {
+      fetchRelatedSizes()
+    }
+  }, [product])
+
+  // Reset copied state after 2 seconds
+  useEffect(() => {
+    if (copied) {
+      const timer = setTimeout(() => {
+        setCopied(false)
+      }, 2000)
+      return () => clearTimeout(timer)
+    }
+  }, [copied])
 
   const fetchProductDetails = async () => {
     try {
@@ -60,6 +80,71 @@ export default function ProductDetailsPage({ params }) {
       router.push("/dashboard/products")
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchRelatedSizes = async () => {
+    if (!product || !product.name) return
+
+    try {
+      setLoadingSizes(true)
+
+      // Get category ID - handle both object and string cases
+      let categoryId
+      if (typeof product.category === "object" && product.category?._id) {
+        categoryId = product.category._id
+      } else if (typeof product.category === "string") {
+        categoryId = product.category
+      }
+
+      // Fetch products with the same name
+      const response = await fetchApi(`/api/v1/product/list?limit=100`)
+
+      if (response.success && response.data && response.data.products) {
+        // Filter products with the same name and category but different sizes
+        const sameNameProducts = response.data.products.filter((p) => {
+          // Check if names match (case insensitive)
+          const nameMatches = p.name.toLowerCase() === product.name.toLowerCase()
+
+          // Check if categories match
+          let pCategoryId
+          if (typeof p.category === "object" && p.category?._id) {
+            pCategoryId = p.category._id
+          } else if (typeof p.category === "string") {
+            pCategoryId = p.category
+          }
+
+          const categoryMatches = pCategoryId === categoryId
+
+          // Product should match name and category but not be the current product
+          return nameMatches && categoryMatches && p._id !== productId
+        })
+
+        setRelatedSizes(sameNameProducts)
+      }
+    } catch (error) {
+      console.error("Failed to fetch related sizes:", error)
+    } finally {
+      setLoadingSizes(false)
+    }
+  }
+
+  const copyToClipboard = async () => {
+    if (!productId) return
+
+    try {
+      await navigator.clipboard.writeText(productId)
+      setCopied(true)
+      toast({
+        title: "Copied!",
+        description: "Product ID copied to clipboard",
+      })
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Failed to copy",
+        description: "Could not copy to clipboard",
+      })
     }
   }
 
@@ -492,6 +577,31 @@ export default function ProductDetailsPage({ params }) {
     return `/placeholder.svg?height=200&width=200&query=Product ${product.name} ${index + 1}`
   }
 
+  // Sort related sizes for consistent display
+  const sortedRelatedSizes = [...relatedSizes].sort((a, b) => {
+    // If sizes are strings, try to compare them directly
+    if (typeof a.size === "string" && typeof b.size === "string") {
+      // Common size abbreviations in order
+      const sizeOrder = { XS: 1, S: 2, M: 3, L: 4, XL: 5, XXL: 6, XXXL: 7 }
+
+      // If both sizes are in our predefined order, use that
+      if (sizeOrder[a.size] && sizeOrder[b.size]) {
+        return sizeOrder[a.size] - sizeOrder[b.size]
+      }
+
+      // Otherwise just compare alphabetically
+      return a.size.localeCompare(b.size)
+    }
+
+    // If sizes are numbers, compare numerically
+    if (!isNaN(Number(a.size)) && !isNaN(Number(b.size))) {
+      return Number(a.size) - Number(b.size)
+    }
+
+    // Fallback to string comparison
+    return String(a.size).localeCompare(String(b.size))
+  })
+
   return (
     <div>
       <Header title="Product Details" />
@@ -561,6 +671,26 @@ export default function ProductDetailsPage({ params }) {
                   <div>
                     <h3 className="text-lg font-medium mb-4">Product Information</h3>
                     <dl className="space-y-2">
+                      {/* Product ID with copy button */}
+                      <div className="flex justify-between items-center">
+                        <dt className="font-medium text-muted-foreground">Product ID:</dt>
+                        <dd className="text-right flex items-center">
+                          <span className="mr-2 text-sm font-mono bg-gray-100 px-2 py-1 rounded">{productId}</span>
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={copyToClipboard}>
+                                  {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <p>{copied ? "Copied!" : "Copy ID"}</p>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </dd>
+                      </div>
+
                       <div className="flex justify-between">
                         <dt className="font-medium text-muted-foreground">Price:</dt>
                         <dd className="text-right">
@@ -613,12 +743,43 @@ export default function ProductDetailsPage({ params }) {
                           <dd className="text-right">{product.coating}</dd>
                         </div>
                       )}
-                      {product.size && (
-                        <div className="flex justify-between">
-                          <dt className="font-medium text-muted-foreground">Size:</dt>
-                          <dd className="text-right">{product.size}</dd>
-                        </div>
-                      )}
+
+                      {/* Enhanced size display */}
+                      <div className="flex justify-between items-start">
+                        <dt className="font-medium text-muted-foreground pt-1">Size:</dt>
+                        <dd className="text-right">
+                          <div className="flex flex-col items-end">
+                            <Badge className="mb-2">{product.size || "No size"}</Badge>
+
+                            {/* Available sizes section */}
+                            {(sortedRelatedSizes.length > 0 || loadingSizes) && (
+                              <div className="mt-1">
+                                <p className="text-xs text-muted-foreground mb-1">Other available sizes:</p>
+                                {loadingSizes ? (
+                                  <div className="flex justify-center">
+                                    <div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1 justify-end">
+                                    {sortedRelatedSizes.map((relatedProduct) => (
+                                      <Button
+                                        key={relatedProduct._id}
+                                        variant="outline"
+                                        size="sm"
+                                        className="h-7 text-xs"
+                                        onClick={() => router.push(`/dashboard/products/view/${relatedProduct._id}`)}
+                                      >
+                                        {relatedProduct.size || "No size"}
+                                        <ExternalLink className="ml-1 h-3 w-3" />
+                                      </Button>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </dd>
+                      </div>
                     </dl>
                   </div>
                 </div>
