@@ -5,29 +5,28 @@ import { useRouter } from "next/navigation"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Calendar } from "lucide-react"
+import { ArrowLeft } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Calendar as CalendarComponent } from "@/components/ui/calendar"
-import { format } from "date-fns"
+import { EnhancedDateRangePicker } from "@/components/ui/enhanced-date-range-picker"
+import { HierarchicalProductSelector } from "@/components/ui/hierarchical-product-selector"
+import { Separator } from "@/components/ui/separator"
 
 export default function AddCouponPage() {
   const [formData, setFormData] = useState({
     code: "",
     offerPercentage: "",
-    validFrom: new Date(),
-    validUntil: new Date(new Date().setMonth(new Date().getMonth() + 1)), // Default to 1 month from now
-    products: [],
   })
 
   const [products, setProducts] = useState([])
+  const [selectedProductIds, setSelectedProductIds] = useState([])
   const [loading, setLoading] = useState(false)
+  const [productsLoading, setProductsLoading] = useState(true)
   const [errors, setErrors] = useState({})
-  const [calendarOpen, setCalendarOpen] = useState({ from: false, until: false })
+  const [startDate, setStartDate] = useState<Date>(new Date())
+  const [endDate, setEndDate] = useState<Date>(new Date(new Date().setMonth(new Date().getMonth() + 1)))
 
   const router = useRouter()
   const { toast } = useToast()
@@ -38,16 +37,33 @@ export default function AddCouponPage() {
 
   const fetchProducts = async () => {
     try {
+      setProductsLoading(true)
       const response = await fetchApi("/api/v1/product/list/")
+
+      // Log the response to see its structure
+      console.log("Product API response:", response)
+
       const productsData = response.data?.products || response.products || []
+
+      // Log the extracted products
+      console.log("Extracted products:", productsData)
+
+      // Log a sample product if available
+      if (productsData.length > 0) {
+        console.log("Sample product:", productsData[0])
+      }
+
       setProducts(productsData)
     } catch (error) {
+      console.error("Error fetching products:", error)
       toast({
         variant: "destructive",
         title: "Error",
         description: "Failed to fetch products",
       })
       setProducts([])
+    } finally {
+      setProductsLoading(false)
     }
   }
 
@@ -58,15 +74,6 @@ export default function AddCouponPage() {
     // Clear error for this field
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: null }))
-    }
-  }
-
-  const handleProductsChange = (selectedProducts) => {
-    setFormData((prev) => ({ ...prev, products: selectedProducts }))
-
-    // Clear error for this field
-    if (errors.products) {
-      setErrors((prev) => ({ ...prev, products: null }))
     }
   }
 
@@ -87,13 +94,13 @@ export default function AddCouponPage() {
       newErrors.offerPercentage = "Offer percentage must be between 1 and 100"
     }
 
-    if (!formData.validFrom) {
+    if (!startDate) {
       newErrors.validFrom = "Valid from date is required"
     }
 
-    if (!formData.validUntil) {
+    if (!endDate) {
       newErrors.validUntil = "Valid until date is required"
-    } else if (formData.validUntil < formData.validFrom) {
+    } else if (endDate < startDate) {
       newErrors.validUntil = "Valid until date must be after valid from date"
     }
 
@@ -119,8 +126,9 @@ export default function AddCouponPage() {
       // Format dates for API
       const apiData = {
         ...formData,
-        validFrom: formData.validFrom.toISOString(),
-        validUntil: formData.validUntil.toISOString(),
+        validFrom: startDate.toISOString(),
+        validUntil: endDate.toISOString(),
+        products: selectedProductIds,
       }
 
       await fetchApi("/api/v1/admin/coupon/add", {
@@ -145,217 +153,90 @@ export default function AddCouponPage() {
     }
   }
 
-  // Handle calendar open/close
-  const handleCalendarOpenChange = (field, isOpen) => {
-    setCalendarOpen((prev) => ({ ...prev, [field]: isOpen }))
-  }
-
-  // Handle date selection
-  const handleDateSelect = (field, date) => {
-    setFormData((prev) => ({ ...prev, [field]: date }))
-    // Don't close the popover immediately to prevent accidental form submission
-    setTimeout(() => {
-      setCalendarOpen((prev) => ({ ...prev, [field]: false }))
-    }, 100)
-  }
-
   return (
     <div>
       <Header title="Add Coupon" />
       <div className="p-6">
-        <Button variant="outline" className="mb-6" onClick={() => router.back()}>
+        <Button variant="outline" className="mb-6" onClick={() => router.back()} type="button">
           <ArrowLeft className="mr-2 h-4 w-4" />
           Back to Coupons
         </Button>
 
-        <form onSubmit={handleSubmit}>
-          <div className="max-w-2xl mx-auto">
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="max-w-3xl mx-auto">
             <Card>
               <CardHeader>
-                <CardTitle>Coupon Information</CardTitle>
+                <CardTitle>Create New Coupon</CardTitle>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="code" className={errors.code ? "text-destructive" : ""}>
-                    Coupon Code *
-                  </Label>
-                  <Input
-                    id="code"
-                    name="code"
-                    value={formData.code}
-                    onChange={handleChange}
-                    className={errors.code ? "border-destructive" : ""}
-                    placeholder="e.g., SUMMER2024"
-                  />
-                  {errors.code && <p className="text-sm text-destructive">{errors.code}</p>}
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="offerPercentage" className={errors.offerPercentage ? "text-destructive" : ""}>
-                    Discount Percentage (%) *
-                  </Label>
-                  <Input
-                    id="offerPercentage"
-                    name="offerPercentage"
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={formData.offerPercentage}
-                    onChange={handleChange}
-                    className={errors.offerPercentage ? "border-destructive" : ""}
-                    placeholder="e.g., 10"
-                  />
-                  {errors.offerPercentage && <p className="text-sm text-destructive">{errors.offerPercentage}</p>}
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+              <CardContent className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
-                    <Label htmlFor="validFrom" className={errors.validFrom ? "text-destructive" : ""}>
-                      Valid From *
+                    <Label htmlFor="code" className={errors.code ? "text-destructive" : ""}>
+                      Coupon Code *
                     </Label>
-                    <Popover open={calendarOpen.from} onOpenChange={(open) => handleCalendarOpenChange("from", open)}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button" // Explicitly set type to button to prevent form submission
-                          variant="outline"
-                          className={`w-full justify-start text-left font-normal ${
-                            errors.validFrom ? "border-destructive" : ""
-                          }`}
-                          onClick={(e) => {
-                            e.preventDefault() // Prevent any default behavior
-                            handleCalendarOpenChange("from", !calendarOpen.from)
-                          }}
-                        >
-                          <Calendar className="mr-2 h-4 w-4" />
-                          {formData.validFrom ? format(formData.validFrom, "PPP") : "Select date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" onClick={(e) => e.stopPropagation()}>
-                        <CalendarComponent
-                          mode="single"
-                          selected={formData.validFrom}
-                          onSelect={(date) => date && handleDateSelect("validFrom", date)}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    {errors.validFrom && <p className="text-sm text-destructive">{errors.validFrom}</p>}
+                    <Input
+                      id="code"
+                      name="code"
+                      value={formData.code}
+                      onChange={handleChange}
+                      className={errors.code ? "border-destructive" : ""}
+                      placeholder="e.g., SUMMER2024"
+                    />
+                    {errors.code && <p className="text-sm text-destructive">{errors.code}</p>}
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="validUntil" className={errors.validUntil ? "text-destructive" : ""}>
-                      Valid Until *
+                    <Label htmlFor="offerPercentage" className={errors.offerPercentage ? "text-destructive" : ""}>
+                      Discount Percentage (%) *
                     </Label>
-                    <Popover open={calendarOpen.until} onOpenChange={(open) => handleCalendarOpenChange("until", open)}>
-                      <PopoverTrigger asChild>
-                        <Button
-                          type="button" // Explicitly set type to button to prevent form submission
-                          variant="outline"
-                          className={`w-full justify-start text-left font-normal ${
-                            errors.validUntil ? "border-destructive" : ""
-                          }`}
-                          onClick={(e) => {
-                            e.preventDefault() // Prevent any default behavior
-                            handleCalendarOpenChange("until", !calendarOpen.until)
-                          }}
-                        >
-                          <Calendar className="mr-2 h-4 w-4" />
-                          {formData.validUntil ? format(formData.validUntil, "PPP") : "Select date"}
-                        </Button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" onClick={(e) => e.stopPropagation()}>
-                        <CalendarComponent
-                          mode="single"
-                          selected={formData.validUntil}
-                          onSelect={(date) => date && handleDateSelect("validUntil", date)}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    {errors.validUntil && <p className="text-sm text-destructive">{errors.validUntil}</p>}
+                    <Input
+                      id="offerPercentage"
+                      name="offerPercentage"
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={formData.offerPercentage}
+                      onChange={handleChange}
+                      className={errors.offerPercentage ? "border-destructive" : ""}
+                      placeholder="e.g., 10"
+                    />
+                    {errors.offerPercentage && <p className="text-sm text-destructive">{errors.offerPercentage}</p>}
                   </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="products" className={errors.products ? "text-destructive" : ""}>
-                    Applicable Products
-                  </Label>
-                  <Select
-                    value={formData.products.length > 0 ? "selected" : ""}
-                    onValueChange={(value) => {
-                      if (value === "all") {
-                        handleProductsChange(products.map((p) => p._id))
-                      } else if (value === "none") {
-                        handleProductsChange([])
-                      }
-                    }}
-                  >
-                    <SelectTrigger className={errors.products ? "border-destructive" : ""}>
-                      <SelectValue placeholder="Select products">
-                        {formData.products.length > 0
-                          ? `${formData.products.length} product(s) selected`
-                          : "Select products"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Products</SelectItem>
-                      <SelectItem value="none">No Products</SelectItem>
-                      <SelectItem value="selected">Selected Products</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  {errors.products && <p className="text-sm text-destructive">{errors.products}</p>}
+                <Separator />
 
-                  {formData.products.length > 0 && (
-                    <div className="mt-2 space-y-2">
-                      <Label>Selected Products:</Label>
-                      <div className="max-h-40 overflow-y-auto border rounded-md p-2">
-                        {formData.products.map((productId) => {
-                          const product = products.find((p) => p._id === productId)
-                          return (
-                            <div key={productId} className="flex items-center justify-between py-1">
-                              <span>{product ? product.name : productId}</span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleProductsChange(formData.products.filter((id) => id !== productId))}
-                              >
-                                Remove
-                              </Button>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )}
+                <EnhancedDateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  startError={errors.validFrom}
+                  endError={errors.validUntil}
+                />
 
-                  {formData.products.length < products.length && (
-                    <div className="mt-2">
-                      <Label>Add Products:</Label>
-                      <div className="max-h-40 overflow-y-auto border rounded-md p-2 mt-1">
-                        {products
-                          .filter((product) => !formData.products.includes(product._id))
-                          .map((product) => (
-                            <div key={product._id} className="flex items-center justify-between py-1">
-                              <span>{product.name}</span>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleProductsChange([...formData.products, product._id])}
-                              >
-                                Add
-                              </Button>
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                <Separator />
+
+                {productsLoading ? (
+                  <div className="flex items-center justify-center p-8">
+                    <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                    <span className="ml-3">Loading products...</span>
+                  </div>
+                ) : (
+                  <HierarchicalProductSelector
+                    products={products}
+                    selectedProductIds={selectedProductIds}
+                    onChange={setSelectedProductIds}
+                    error={errors.products}
+                  />
+                )}
               </CardContent>
-              <CardFooter className="flex justify-end">
-                <Button type="submit" className="bg-[#28acc1] hover:bg-[#1e8a9a]" disabled={loading}>
-                  {loading ? "Adding..." : "Add Coupon"}
+              <CardFooter className="flex justify-end space-x-2">
+                <Button type="button" variant="outline" onClick={() => router.push("/dashboard/coupons")}>
+                  Cancel
+                </Button>
+                <Button type="submit" className="bg-[#28acc1] hover:bg-[#1e8a9a]" disabled={loading || productsLoading}>
+                  {loading ? "Adding..." : "Create Coupon"}
                 </Button>
               </CardFooter>
             </Card>
