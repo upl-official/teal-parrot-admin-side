@@ -25,14 +25,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url))
   }
 
-  // Add X-Robots-Tag header to prevent indexing
-  const response = NextResponse.next()
-  response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
-
-  return response
+  return NextResponse.next()
 }
 
 // Specify paths to run middleware on
 export const config = {
-  matcher: ["/(.*)", "/login", "/dashboard/:path*"],
+  matcher: ["/login", "/dashboard/:path*"],
 }

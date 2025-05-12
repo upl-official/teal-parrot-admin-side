@@ -1,18 +1,3 @@
-# Prevent indexing of the entire admin dashboard
+# Disallow all robots from accessing the admin dashboard
 User-agent: *
-Disallow: /
-Noindex: /
-
-# Explicitly block common bots
-User-agent: Googlebot
-Disallow: /
-User-agent: Bingbot
-Disallow: /
-User-agent: Slurp
-Disallow: /
-User-agent: DuckDuckBot
-Disallow: /
-User-agent: Baiduspider
-Disallow: /
-User-agent: YandexBot
 Disallow: /
