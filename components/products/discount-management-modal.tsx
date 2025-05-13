@@ -17,6 +17,11 @@ import { fetchApi } from "@/lib/api"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Percent, Tag, ArrowRight } from "lucide-react"
+// Import the new DiscountInput component
+import { DiscountInput } from "@/components/ui/discount-input"
+import { DecimalInput } from "@/components/ui/decimal-input"
+// Add the new function to the imports
+import { calculateSellingPriceAsNumber, calculateDiscountFromPrices } from "@/lib/price-utils"
 
 interface DiscountManagementModalProps {
   open: boolean
@@ -29,34 +34,31 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
   const [loading, setLoading] = useState(false)
   const [originalPrice, setOriginalPrice] = useState(product?.price || 0)
   const [discountPercentage, setDiscountPercentage] = useState(0)
-  const [sellingPrice, setSellingPrice] = useState(product?.price || 0)
+  const [sellingPrice, setSellingPrice] = useState<number>(Number(product?.price || 0))
   const { toast } = useToast()
 
   // Initialize values when modal opens or product changes
   useEffect(() => {
     if (product) {
-      setOriginalPrice(product.price || 0)
+      // Use originalPrice as the original price (before discount)
+      setOriginalPrice(Number(product.originalPrice || product.price || 0))
 
-      // Calculate discount percentage if discountPrice exists
-      if (product.discountPrice) {
-        const calculatedDiscount = Math.round(((product.price - product.discountPrice) / product.price) * 100)
-        setDiscountPercentage(calculatedDiscount)
-        setSellingPrice(product.discountPrice)
-      } else {
-        setDiscountPercentage(0)
-        setSellingPrice(product.price || 0)
-      }
+      // Use the provided discountPercentage
+      setDiscountPercentage(Number(product.discountPercentage || 0))
+
+      // Use price as the selling price (after discount)
+      setSellingPrice(Number(product.price || 0))
     }
   }, [product, open])
 
   // Calculate selling price when original price or discount percentage changes
-  const calculateSellingPrice = (price: number, discount: number) => {
+  const calculateSellingPriceOld = (price: number, discount: number) => {
     if (discount <= 0) return price
     return Math.round(price - (price * discount) / 100)
   }
 
   // Calculate discount percentage when original price or selling price changes
-  const calculateDiscountPercentage = (originalPrice: number, sellingPrice: number) => {
+  const calculateDiscountPercentageOld = (originalPrice: number, sellingPrice: number) => {
     if (sellingPrice >= originalPrice) return 0
     return Math.round(((originalPrice - sellingPrice) / originalPrice) * 100)
   }
@@ -66,18 +68,34 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
     // No-op function as original price is now fixed
   }
 
-  // Handle discount percentage change
+  // Replace this function:
+  // const handleDiscountPercentageChange = (value: string) => {
+  //   const discount = Number.parseFloat(value) || 0
+  //   setDiscountPercentage(discount)
+
+  //   // Calculate selling price with high precision and ensure it's a number
+  //   const calculatedSellingPrice = Number(calculateSellingPrice(originalPrice, discount))
+  //   setSellingPrice(calculatedSellingPrice)
+  // }
+
+  // With this:
   const handleDiscountPercentageChange = (value: string) => {
     const discount = Number.parseFloat(value) || 0
     setDiscountPercentage(discount)
-    setSellingPrice(calculateSellingPrice(originalPrice, discount))
+
+    // Use the numeric version of the function
+    const calculatedSellingPrice = calculateSellingPriceAsNumber(originalPrice, discount)
+    setSellingPrice(calculatedSellingPrice)
   }
 
-  // Handle selling price change
+  // Replace the handleSellingPriceChange function
   const handleSellingPriceChange = (value: string) => {
     const price = Number.parseFloat(value) || 0
     setSellingPrice(price)
-    setDiscountPercentage(calculateDiscountPercentage(originalPrice, price))
+
+    // Calculate discount with high precision
+    const calculatedDiscount = calculateDiscountFromPrices(originalPrice, price)
+    setDiscountPercentage(Number.parseFloat(calculatedDiscount) || 0)
   }
 
   // Apply discount
@@ -129,7 +147,7 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
 
   // Remove discount
   const handleRemoveDiscount = async () => {
-    if (!product.discountPrice) {
+    if (!product.discountPercentage || product.discountPercentage <= 0) {
       onOpenChange(false)
       return
     }
@@ -165,9 +183,7 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle className="text-xl">Manage Product Discount</DialogTitle>
-          <DialogDescription>
-            Set a discount for {product?.name}.
-          </DialogDescription>
+          <DialogDescription>Set a discount for {product?.name}.</DialogDescription>
         </DialogHeader>
         <div className="space-y-6 py-4">
           {/* Price Preview Card */}
@@ -228,14 +244,12 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
               Discount Percentage
             </Label>
             <div className="relative">
-              <Input
+              <DiscountInput
                 id="discountPercentage"
-                type="number"
-                min="0"
-                max="99"
-                step="1"
-                value={discountPercentage}
-                onChange={(e) => handleDiscountPercentageChange(e.target.value)}
+                min={0}
+                max={99.999999}
+                value={discountPercentage.toString()}
+                onChange={(value) => handleDiscountPercentageChange(value)}
                 className="pr-8"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">%</span>
@@ -247,25 +261,24 @@ export function DiscountManagementModal({ open, onOpenChange, product, onSuccess
             <Label htmlFor="sellingPrice" className="text-sm font-medium">
               Selling Price
             </Label>
-            <Input
+            <DecimalInput
               id="sellingPrice"
-              type="number"
-              min="0"
-              step="1"
-              value={sellingPrice}
-              onChange={(e) => handleSellingPriceChange(e.target.value)}
+              min={0}
+              value={sellingPrice.toString()}
+              onChange={(value) => handleSellingPriceChange(value)}
+              decimalPlaces={2}
             />
           </div>
 
-          {product.discountPrice && (
+          {product.discountPercentage > 0 && (
             <div className="p-3 bg-blue-50 text-blue-700 rounded-md text-sm">
-              Current discount: {calculateDiscountPercentage(product.price, product.discountPrice)}% off (₹
-              {product.price.toFixed(2)} → ₹{product.discountPrice.toFixed(2)})
+              Current discount: {product.discountPercentage}% off (₹
+              {product.originalPrice.toFixed(2)} → ₹{product.price.toFixed(2)})
             </div>
           )}
         </div>
         <DialogFooter className="flex flex-col sm:flex-row gap-2 pt-2 border-t">
-          {product.discountPrice ? (
+          {product.discountPercentage ? (
             <Button
               variant="outline"
               onClick={handleRemoveDiscount}

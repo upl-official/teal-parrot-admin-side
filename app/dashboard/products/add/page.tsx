@@ -20,6 +20,56 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Separator } from "@/components/ui/separator"
+import {
+  formatPriceValue,
+  formatPriceDisplay,
+  calculateSellingPrice,
+  calculateDiscountFromPrices,
+  validatePriceInput,
+  formatDiscountPercentage,
+} from "@/lib/price-utils"
+import { DecimalInput } from "@/components/ui/decimal-input"
+import { DiscountInput } from "@/components/ui/discount-input"
+
+// Calculate selling price based on price and discount (with precision handling)
+// const calculateSellingPrice = (price, discount) => {
+//   if (!price || isNaN(Number(price))) return ""
+//   const numPrice = Number.parseFloat(price)
+//   const numDiscount = Number.parseFloat(discount || "0")
+
+//   if (isNaN(numPrice) || isNaN(numDiscount)) return ""
+//   if (numPrice <= 0) return "0.00"
+
+//   // Ensure discount is between 0 and 100
+//   const validDiscount = Math.max(0, Math.min(100, numDiscount))
+
+//   // Calculate with precision
+//   const discountAmount = (numPrice * validDiscount) / 100
+//   const sellingPrice = numPrice - discountAmount
+
+//   // Return formatted to 2 decimal places
+//   return sellingPrice.toFixed(2)
+// }
+
+// Calculate discount percentage from original price and selling price (with precision handling)
+const calculateDiscountFromSellingPrice = (originalPrice, sellingPrice) => {
+  if (!originalPrice || !sellingPrice) return "0"
+
+  const numOriginalPrice = Number.parseFloat(originalPrice)
+  const numSellingPrice = Number.parseFloat(sellingPrice)
+
+  if (isNaN(numOriginalPrice) || isNaN(numSellingPrice) || numOriginalPrice <= 0) return "0"
+
+  // If selling price is higher than original, no discount
+  if (numSellingPrice >= numOriginalPrice) return "0"
+
+  // Calculate discount with precision
+  const discountAmount = numOriginalPrice - numSellingPrice
+  const discountPercentage = (discountAmount / numOriginalPrice) * 100
+
+  // Return formatted to 2 decimal places
+  return discountPercentage.toFixed(2)
+}
 
 export default function AddProductPage() {
   const [formData, setFormData] = useState({
@@ -146,42 +196,6 @@ export default function AddProductPage() {
     }
   }
 
-  const handleChange = (e) => {
-    const { name, value } = e.target
-    setFormData((prev) => {
-      const updatedData = { ...prev, [name]: value }
-
-      // If price or discount changes, update selling price
-      if (name === "price" || name === "discount") {
-        if (updatedData.price && !isNaN(updatedData.price)) {
-          updatedData.sellingPrice = calculateSellingPrice(updatedData.price, updatedData.discount)
-        }
-      }
-
-      // If selling price changes, update discount
-      if (name === "sellingPrice") {
-        if (updatedData.price && value && !isNaN(updatedData.price) && !isNaN(value)) {
-          updatedData.discount = calculateDiscountFromSellingPrice(updatedData.price, value)
-        }
-      }
-
-      return updatedData
-    })
-
-    // Mark field as touched
-    setTouched((prev) => ({ ...prev, [name]: true }))
-
-    // Validate the field if it's been touched or form submission has been attempted
-    if (touched[name] || isSubmitAttempted) {
-      validateField(name, value)
-    }
-
-    // Clear API error when user makes changes
-    if (apiError) {
-      setApiError("")
-    }
-  }
-
   const handleSelectChange = (name, value) => {
     setFormData((prev) => ({ ...prev, [name]: value }))
 
@@ -224,24 +238,28 @@ export default function AddProductPage() {
         }
         break
       case "price":
-        if (!value) {
-          fieldError = "Price is required"
-        } else if (isNaN(value) || Number(value) <= 0) {
-          fieldError = "Price must be a positive number"
-        }
+        fieldError = validatePriceInput(value, {
+          required: true,
+          min: 0.01,
+          fieldName: "Original price",
+        })
         break
       case "discount":
-        if (value && (isNaN(value) || Number(value) < 0 || Number(value) > 100)) {
-          fieldError = "Discount must be between 0 and 100"
+        if (value && (isNaN(value) || Number(value) < 0)) {
+          fieldError = "Discount cannot be negative"
+        } else if (value && Number(value) > 100) {
+          fieldError = "Discount cannot exceed 100%"
         }
         break
       case "sellingPrice":
-        if (value) {
-          if (isNaN(value) || Number(value) <= 0) {
-            fieldError = "Selling price must be a positive number"
-          } else if (formData.price && Number(value) > Number(formData.price)) {
-            fieldError = "Selling price cannot be higher than original price"
-          }
+        fieldError = validatePriceInput(value, {
+          min: 0.01,
+          fieldName: "Selling price",
+        })
+
+        // Additional validation for selling price
+        if (!fieldError && formData.price && Number.parseFloat(value) > Number.parseFloat(formData.price)) {
+          fieldError = "Selling price cannot be higher than original price"
         }
         break
       case "stock":
@@ -344,7 +362,7 @@ export default function AddProductPage() {
       const price = field === "price" ? value : updatedVariations[index].price
       const discount = field === "discount" ? value : updatedVariations[index].discount
 
-      if (price && !isNaN(price)) {
+      if (price && !isNaN(Number(price))) {
         const calculatedSellingPrice = calculateSellingPrice(price, discount)
         updatedVariations[index].sellingPrice = calculatedSellingPrice
       }
@@ -354,8 +372,9 @@ export default function AddProductPage() {
     if (field === "sellingPrice") {
       const price = updatedVariations[index].price
 
-      if (price && value && !isNaN(price) && !isNaN(value)) {
-        const calculatedDiscount = calculateDiscountFromSellingPrice(price, value)
+      if (price && value && !isNaN(Number(price)) && !isNaN(Number(value))) {
+        // Use our utility function instead of the local calculateDiscountFromSellingPrice
+        const calculatedDiscount = calculateDiscountFromPrices(price, value)
         updatedVariations[index].discount = calculatedDiscount
       }
     }
@@ -385,11 +404,11 @@ export default function AddProductPage() {
         break
       case "price":
         if (!samePriceForAll) {
-          if (!value) {
-            fieldError = "Price is required"
-          } else if (isNaN(value) || Number(value) <= 0) {
-            fieldError = "Price must be a positive number"
-          }
+          fieldError = validatePriceInput(value, {
+            required: true,
+            min: 0.01,
+            fieldName: "Original price",
+          })
         }
         break
       case "stock":
@@ -409,12 +428,18 @@ export default function AddProductPage() {
         }
         break
       case "sellingPrice":
-        if (value) {
-          if (isNaN(value) || Number(value) <= 0) {
-            fieldError = "Selling price must be a positive number"
-          } else {
-            const price = sizeVariations[index].price
-            if (price && Number(value) > Number(price)) {
+        if (!sameDiscountForAll) {
+          fieldError = validatePriceInput(value, {
+            min: 0.01,
+            fieldName: "Selling price",
+          })
+
+          // Additional validation for selling price
+          if (!fieldError && sizeVariations[index].price) {
+            const numPrice = Number.parseFloat(sizeVariations[index].price)
+            const numSellingPrice = Number.parseFloat(value)
+
+            if (!isNaN(numPrice) && !isNaN(numSellingPrice) && numSellingPrice > numPrice) {
               fieldError = "Selling price cannot be higher than original price"
             }
           }
@@ -547,7 +572,7 @@ export default function AddProductPage() {
           }
 
           // Also update selling price based on the new price and current discount
-          if (formData.price) {
+          if (formData.price && !isNaN(Number(formData.price))) {
             updatedVariation.sellingPrice = calculateSellingPrice(formData.price, variation.discount)
           }
 
@@ -578,7 +603,7 @@ export default function AddProductPage() {
           }
 
           // Also update selling price based on current price and the new discount
-          if (variation.price) {
+          if (variation.price && !isNaN(Number(variation.price))) {
             updatedVariation.sellingPrice = calculateSellingPrice(variation.price, formData.discount)
           }
 
@@ -866,42 +891,67 @@ export default function AddProductPage() {
     }
   }
 
-  // Calculate selling price based on price and discount
-  const calculateSellingPrice = (price, discount) => {
-    if (!price) return ""
-    const numPrice = Number.parseFloat(price)
-    const numDiscount = Number.parseFloat(discount || "0")
-    if (isNaN(numPrice) || isNaN(numDiscount)) return ""
+  const handleChange = (e) => {
+    const { name, value } = e.target
 
-    // Ensure discount is between 0 and 100
-    const validDiscount = Math.max(0, Math.min(100, numDiscount))
+    setFormData((prev) => {
+      const updatedData = { ...prev, [name]: value }
 
-    return (numPrice - (numPrice * validDiscount) / 100).toFixed(2)
-  }
+      // Only update related fields if the current field is one of price, discount, or sellingPrice
+      if (name === "price") {
+        // When price changes, recalculate selling price based on current discount
+        if (value && !isNaN(value)) {
+          updatedData.sellingPrice = calculateSellingPrice(value, updatedData.discount)
+        } else {
+          // If price is invalid, reset selling price
+          updatedData.sellingPrice = ""
+        }
+      } else if (name === "discount") {
+        // When discount changes, recalculate selling price
+        if (prev.price && value) {
+          const numDiscount = Number.parseFloat(value)
+          // Ensure discount is between 0 and 100
+          if (!isNaN(numDiscount) && numDiscount >= 0 && numDiscount <= 100) {
+            updatedData.sellingPrice = calculateSellingPrice(prev.price, value)
+          }
+        }
+      } else if (name === "sellingPrice") {
+        // When selling price changes, recalculate discount
+        if (prev.price && value) {
+          const numPrice = Number.parseFloat(prev.price)
+          const numSellingPrice = Number.parseFloat(value)
 
-  // Calculate discount percentage from original price and selling price
-  const calculateDiscountFromSellingPrice = (originalPrice, sellingPrice) => {
-    if (!originalPrice || !sellingPrice) return "0"
-    const numOriginalPrice = Number.parseFloat(originalPrice)
-    const numSellingPrice = Number.parseFloat(sellingPrice)
+          // Validate that selling price is not higher than original price
+          if (!isNaN(numPrice) && !isNaN(numSellingPrice) && numSellingPrice <= numPrice) {
+            updatedData.discount = calculateDiscountFromPrices(prev.price, value)
+          } else if (numSellingPrice > numPrice) {
+            // If selling price is higher than original, set discount to 0
+            updatedData.discount = "0"
+            updatedData.sellingPrice = formatPriceValue(prev.price)
+          }
+        }
+      }
 
-    if (isNaN(numOriginalPrice) || isNaN(numSellingPrice) || numOriginalPrice <= 0) return "0"
+      return updatedData
+    })
 
-    // If selling price is higher than original, no discount
-    if (numSellingPrice >= numOriginalPrice) return "0"
+    // Mark field as touched
+    setTouched((prev) => ({ ...prev, [name]: true }))
 
-    const discountPercentage = ((numOriginalPrice - numSellingPrice) / numOriginalPrice) * 100
-    return discountPercentage.toFixed(2)
+    // Validate the field if it's been touched or form submission has been attempted
+    if (touched[name] || isSubmitAttempted) {
+      validateField(name, value)
+    }
+
+    // Clear API error when user makes changes
+    if (apiError) {
+      setApiError("")
+    }
   }
 
   // Format price for display
   const formatPrice = (price) => {
-    if (!price || isNaN(price)) return "₹0"
-    return new Intl.NumberFormat("en-IN", {
-      style: "currency",
-      currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(price)
+    return formatPriceDisplay(price)
   }
 
   // Helper function to determine input status for styling
@@ -1067,16 +1117,37 @@ export default function AddProductPage() {
                               </Tooltip>
                             </TooltipProvider>
                           </div>
+
                           <div className="relative">
-                            <Input
+                            <DecimalInput
                               id="price"
                               name="price"
-                              type="number"
-                              min="0"
-                              step="0.01"
                               value={formData.price}
-                              onChange={handleChange}
-                              onBlur={handleBlur}
+                              onChange={(value) => {
+                                setFormData((prev) => {
+                                  const updatedData = { ...prev, price: value }
+
+                                  // Recalculate selling price when price changes
+                                  if (value && !isNaN(Number.parseFloat(value))) {
+                                    updatedData.sellingPrice = calculateSellingPrice(value, updatedData.discount)
+                                  } else {
+                                    updatedData.sellingPrice = ""
+                                  }
+
+                                  return updatedData
+                                })
+
+                                // Mark field as touched
+                                setTouched((prev) => ({ ...prev, price: true }))
+
+                                // Validate if needed
+                                if (touched.price || isSubmitAttempted) {
+                                  validateField("price", value)
+                                }
+                              }}
+                              onBlur={(e) => handleBlur(e)}
+                              min={0}
+                              decimalPlaces={2}
                               className={`${
                                 errors.price
                                   ? "border-destructive pr-10"
@@ -1093,6 +1164,7 @@ export default function AddProductPage() {
                               </div>
                             )}
                           </div>
+
                           {errors.price && (
                             <p id="price-error" className="text-sm font-medium text-destructive flex items-center mt-1">
                               <AlertCircle className="h-3.5 w-3.5 mr-1" />
@@ -1119,16 +1191,37 @@ export default function AddProductPage() {
                               </TooltipProvider>
                             </div>
                             <div className="relative">
-                              <Input
+                              <DiscountInput
                                 id="discount"
                                 name="discount"
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.01"
+                                min={0}
+                                max={99.999999}
                                 value={formData.discount || "0"}
-                                onChange={handleChange}
-                                onBlur={handleBlur}
+                                onChange={(value) => {
+                                  setFormData((prev) => {
+                                    const updatedData = { ...prev, discount: value }
+
+                                    // Recalculate selling price when discount changes
+                                    if (prev.price && value) {
+                                      const numDiscount = Number.parseFloat(value)
+                                      // Ensure discount is between 0 and 100
+                                      if (!isNaN(numDiscount) && numDiscount >= 0 && numDiscount <= 100) {
+                                        updatedData.sellingPrice = calculateSellingPrice(prev.price, value)
+                                      }
+                                    }
+
+                                    return updatedData
+                                  })
+
+                                  // Mark field as touched
+                                  setTouched((prev) => ({ ...prev, discount: true }))
+
+                                  // Validate if needed
+                                  if (touched.discount || isSubmitAttempted) {
+                                    validateField("discount", value)
+                                  }
+                                }}
+                                onBlur={(e) => handleBlur(e)}
                                 className={`pr-6 ${
                                   errors.discount
                                     ? "border-destructive pr-10"
@@ -1175,16 +1268,45 @@ export default function AddProductPage() {
                                 </Tooltip>
                               </TooltipProvider>
                             </div>
+
                             <div className="relative">
-                              <Input
+                              <DecimalInput
                                 id="sellingPrice"
                                 name="sellingPrice"
-                                type="number"
-                                min="0"
-                                step="0.01"
                                 value={formData.sellingPrice}
-                                onChange={handleChange}
-                                onBlur={handleBlur}
+                                onChange={(value) => {
+                                  setFormData((prev) => {
+                                    const updatedData = { ...prev, sellingPrice: value }
+
+                                    // Recalculate discount when selling price changes
+                                    if (prev.price && value) {
+                                      const numPrice = Number.parseFloat(prev.price)
+                                      const numSellingPrice = Number.parseFloat(value)
+
+                                      // Validate that selling price is not higher than original price
+                                      if (!isNaN(numPrice) && !isNaN(numSellingPrice) && numSellingPrice <= numPrice) {
+                                        updatedData.discount = calculateDiscountFromPrices(prev.price, value)
+                                      } else if (numSellingPrice > numPrice) {
+                                        // If selling price is higher than original, set discount to 0
+                                        updatedData.discount = "0"
+                                        updatedData.sellingPrice = formatPriceValue(prev.price)
+                                      }
+                                    }
+
+                                    return updatedData
+                                  })
+
+                                  // Mark field as touched
+                                  setTouched((prev) => ({ ...prev, sellingPrice: true }))
+
+                                  // Validate if needed
+                                  if (touched.sellingPrice || isSubmitAttempted) {
+                                    validateField("sellingPrice", value)
+                                  }
+                                }}
+                                onBlur={(e) => handleBlur(e)}
+                                min={0}
+                                decimalPlaces={2}
                                 className={`${
                                   errors.sellingPrice
                                     ? "border-destructive pr-10"
@@ -1201,6 +1323,7 @@ export default function AddProductPage() {
                                 </div>
                               )}
                             </div>
+
                             {errors.sellingPrice && (
                               <p
                                 id="sellingPrice-error"
@@ -1215,25 +1338,36 @@ export default function AddProductPage() {
 
                         {/* Price summary with visual indicator */}
                         {formData.price && (
-                          <div className="mt-2 p-3 bg-muted/40 rounded-md">
-                            <div className="flex items-center text-sm">
-                              <span
-                                className={
-                                  Number(formData.discount) > 0 ? "line-through text-muted-foreground" : "font-medium"
-                                }
-                              >
-                                {formatPrice(formData.price)}
-                              </span>
+                          <div className="mt-3 p-3 bg-muted/40 rounded-md">
+                            <div className="flex flex-col space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm text-muted-foreground">Original Price:</span>
+                                <span
+                                  className={`font-medium ${Number(formData.discount) > 0 ? "line-through text-muted-foreground" : ""}`}
+                                >
+                                  {formatPrice(formData.price)}
+                                </span>
+                              </div>
 
                               {Number(formData.discount) > 0 && (
                                 <>
-                                  <ArrowRight className="h-3.5 w-3.5 mx-2 text-muted-foreground" />
-                                  <span className="font-medium text-green-600">
-                                    {formatPrice(formData.sellingPrice)}
-                                  </span>
-                                  <Badge className="ml-2 bg-orange-500/10 text-orange-600 hover:bg-orange-500/20">
-                                    {formData.discount}% OFF
-                                  </Badge>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm text-muted-foreground">Discount Applied:</span>
+                                    <Badge className="bg-orange-500/10 text-orange-600 hover:bg-orange-500/20 font-medium">
+                                      {formData.discount}% OFF
+                                    </Badge>
+                                  </div>
+
+                                  <div className="flex items-center justify-between pt-1 border-t border-border/50">
+                                    <span className="text-sm text-muted-foreground">Final Selling Price:</span>
+                                    <span className="font-medium text-green-600">
+                                      {formatPrice(formData.sellingPrice)}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Customers will see the original price crossed out with the discounted price.
+                                  </div>
                                 </>
                               )}
                             </div>
@@ -1630,13 +1764,11 @@ export default function AddProductPage() {
                                   </TooltipProvider>
                                 </div>
                                 <div className="relative">
-                                  <Input
+                                  <DecimalInput
                                     id={`price-${index}`}
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
+                                    min={0}
                                     value={variation.price}
-                                    onChange={(e) => handleSizeVariationChange(index, "price", e.target.value)}
+                                    onChange={(value) => handleSizeVariationChange(index, "price", value)}
                                     onBlur={(e) => validateSizeVariationField(index, "price", e.target.value)}
                                     disabled={samePriceForAll}
                                     className={`${errors.sizeVariations?.[index]?.price ? "border-destructive pr-10" : ""}`}
@@ -1680,14 +1812,12 @@ export default function AddProductPage() {
                                   </TooltipProvider>
                                 </div>
                                 <div className="relative">
-                                  <Input
+                                  <DiscountInput
                                     id={`discount-${index}`}
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    step="0.01"
+                                    min={0}
+                                    max={99.999999}
                                     value={variation.discount || "0"}
-                                    onChange={(e) => handleSizeVariationChange(index, "discount", e.target.value)}
+                                    onChange={(value) => handleSizeVariationChange(index, "discount", value)}
                                     onBlur={(e) => validateSizeVariationField(index, "discount", e.target.value)}
                                     disabled={sameDiscountForAll}
                                     className={`pr-6 ${errors.sizeVariations?.[index]?.discount ? "border-destructive pr-10" : ""}`}
@@ -1733,16 +1863,15 @@ export default function AddProductPage() {
                                   </TooltipProvider>
                                 </div>
                                 <div className="relative">
-                                  <Input
+                                  <DecimalInput
                                     id={`sellingPrice-${index}`}
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
+                                    min={0}
                                     value={variation.sellingPrice}
-                                    onChange={(e) => handleSizeVariationChange(index, "sellingPrice", e.target.value)}
+                                    onChange={(value) => handleSizeVariationChange(index, "sellingPrice", value)}
                                     onBlur={(e) => validateSizeVariationField(index, "sellingPrice", e.target.value)}
                                     disabled={sameDiscountForAll}
                                     className={`${errors.sizeVariations?.[index]?.sellingPrice ? "border-destructive pr-10" : ""}`}
+                                    aria-invalid={errors.sizeVariations?.[index]?.sellingPrice ? "true" : "false"}
                                   />
                                   {isSubmitAttempted && !sameDiscountForAll && (
                                     <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
@@ -1774,17 +1903,17 @@ export default function AddProductPage() {
                                         : "font-medium"
                                     }
                                   >
-                                    {formatPrice(variation.price)}
+                                    {formatPriceDisplay(variation.price)}
                                   </span>
 
                                   {Number(variation.discount) > 0 && (
                                     <>
                                       <ArrowRight className="h-3.5 w-3.5 mx-2 text-muted-foreground" />
                                       <span className="font-medium text-green-600">
-                                        {formatPrice(variation.sellingPrice || variation.price)}
+                                        {formatPriceDisplay(variation.sellingPrice || variation.price)}
                                       </span>
                                       <Badge className="ml-2 bg-orange-500/10 text-orange-600 hover:bg-orange-500/20">
-                                        {variation.discount}% OFF
+                                        {formatDiscountPercentage(variation.discount, 2)}% OFF
                                       </Badge>
                                     </>
                                   )}

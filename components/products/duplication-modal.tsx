@@ -19,6 +19,11 @@ import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
+// Import the new components and utilities
+import { DiscountInput } from "@/components/ui/discount-input"
+import { DecimalInput } from "@/components/ui/decimal-input"
+import { calculateSellingPrice } from "@/lib/price-utils"
+
 interface DuplicationModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -126,9 +131,10 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
     setSizeVariations(sizeVariations.filter((_, i) => i !== index))
   }
 
+  // Update the updateSizeVariation function to handle more precise calculations
   const updateSizeVariation = (index: number, field: keyof SizeVariation, value: string | number) => {
     const updatedVariations = [...sizeVariations]
-    const numValue = typeof value === "string" ? Number(value) || 0 : value
+    const numValue = typeof value === "string" ? Number.parseFloat(value) || 0 : value
 
     if (field === "size") {
       updatedVariations[index].size = value as string
@@ -138,7 +144,8 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
       // Update selling price based on discount and current price
       if (!applySameDiscount) {
         const variationPrice = applySamePrice ? originalPrice : updatedVariations[index].price
-        updatedVariations[index].sellingPrice = calculateSellingPrice(variationPrice, numValue)
+        const calculatedSellingPrice = calculateSellingPrice(variationPrice, numValue)
+        updatedVariations[index].sellingPrice = calculatedSellingPrice
       }
     } else if (field === "sellingPrice") {
       updatedVariations[index].sellingPrice = numValue
@@ -146,17 +153,16 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
       // Update discount percentage based on selling price and current price
       if (!applySameDiscount) {
         const variationPrice = applySamePrice ? originalPrice : updatedVariations[index].price
-        updatedVariations[index].discountPercentage = calculateDiscountPercentage(variationPrice, numValue)
+        const calculatedDiscount = calculateDiscountPercentage(variationPrice, numValue)
+        updatedVariations[index].discountPercentage = calculatedDiscount
       }
     } else if (field === "price") {
       updatedVariations[index].price = numValue
 
       // If price changes and we're not applying same discount, recalculate selling price
       if (!applySameDiscount) {
-        updatedVariations[index].sellingPrice = calculateSellingPrice(
-          numValue,
-          updatedVariations[index].discountPercentage,
-        )
+        const calculatedSellingPrice = calculateSellingPrice(numValue, updatedVariations[index].discountPercentage)
+        updatedVariations[index].sellingPrice = calculatedSellingPrice
       }
     } else if (field === "stock") {
       updatedVariations[index].stock = numValue
@@ -237,26 +243,33 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
     }
   }
 
+  // Replace the calculateSellingPrice function
   const calculateSellingPrice = (price: number, discountPercentage: number) => {
     if (discountPercentage <= 0) return price
     return Math.round(price - (price * discountPercentage) / 100)
   }
 
+  // Replace the calculateDiscountPercentage function
   const calculateDiscountPercentage = (originalPrice: number, sellingPrice: number) => {
     if (sellingPrice >= originalPrice) return 0
-    return Math.round(((originalPrice - sellingPrice) / originalPrice) * 100)
+    const discountAmount = originalPrice - sellingPrice
+    return (discountAmount / originalPrice) * 100
   }
 
+  // Update the updateCustomDiscountPercentage function
   const updateCustomDiscountPercentage = (value: string) => {
-    const discount = Number(value) || 0
+    const discount = Number.parseFloat(value) || 0
     setCustomDiscountPercentage(discount)
-    setCustomSellingPrice(calculateSellingPrice(customPrice, discount))
+    const calculatedSellingPrice = calculateSellingPrice(customPrice, discount)
+    setCustomSellingPrice(calculatedSellingPrice)
   }
 
+  // Update the updateCustomSellingPrice function
   const updateCustomSellingPrice = (value: string) => {
-    const price = Number(value) || 0
+    const price = Number.parseFloat(value) || 0
     setCustomSellingPrice(price)
-    setCustomDiscountPercentage(calculateDiscountPercentage(customPrice, price))
+    const calculatedDiscount = calculateDiscountPercentage(customPrice, price)
+    setCustomDiscountPercentage(calculatedDiscount)
   }
 
   const updateCustomPrice = (value: string) => {
@@ -563,15 +576,14 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
                               </Tooltip>
                             </TooltipProvider>
                           </div>
-                          <Input
+                          <DiscountInput
                             id={`discount-${index}`}
-                            type="number"
-                            min="0"
-                            max="99"
-                            value={variation.discountPercentage}
-                            onChange={(e) => updateSizeVariation(index, "discountPercentage", e.target.value)}
+                            min={0}
+                            max={99.999999}
+                            value={variation.discountPercentage.toString()}
+                            onChange={(value) => updateSizeVariation(index, "discountPercentage", value)}
                             disabled={applySameDiscount}
-                            className="h-8 text-sm"
+                            className="h-8 text-sm pr-6"
                           />
                         </div>
                         <div>
@@ -590,14 +602,14 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
                               </Tooltip>
                             </TooltipProvider>
                           </div>
-                          <Input
+                          <DecimalInput
                             id={`selling-${index}`}
-                            type="number"
-                            min="1"
-                            value={variation.sellingPrice}
-                            onChange={(e) => updateSizeVariation(index, "sellingPrice", e.target.value)}
+                            min={1}
+                            value={variation.sellingPrice.toString()}
+                            onChange={(value) => updateSizeVariation(index, "sellingPrice", value)}
                             disabled={applySameDiscount}
                             className="h-8 text-sm"
+                            decimalPlaces={2}
                           />
                         </div>
                       </div>
@@ -755,14 +767,12 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
                       Discount Percentage
                     </Label>
                     <div className="relative">
-                      <Input
+                      <DiscountInput
                         id="discountPercentage"
-                        type="number"
-                        min="0"
-                        max="99"
-                        step="1"
-                        value={customDiscountPercentage}
-                        onChange={(e) => updateCustomDiscountPercentage(e.target.value)}
+                        min={0}
+                        max={99.999999}
+                        value={customDiscountPercentage.toString()}
+                        onChange={(value) => updateCustomDiscountPercentage(value)}
                         className="pr-6 h-8 text-sm"
                       />
                       <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">%</span>
@@ -773,14 +783,13 @@ export function DuplicationModal({ open, onOpenChange, product, onDuplicate, onC
                     <Label htmlFor="sellingPrice" className="text-xs font-medium">
                       Selling Price
                     </Label>
-                    <Input
+                    <DecimalInput
                       id="sellingPrice"
-                      type="number"
-                      min="1"
-                      step="1"
-                      value={customSellingPrice}
-                      onChange={(e) => updateCustomSellingPrice(e.target.value)}
+                      min={1}
+                      value={customSellingPrice.toString()}
+                      onChange={(value) => updateCustomSellingPrice(value)}
                       className="h-8 text-sm"
+                      decimalPlaces={2}
                     />
                   </div>
 
