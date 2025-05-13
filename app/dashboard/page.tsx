@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import Header from "@/components/layout/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Package, Tag, Layers, ShoppingCart, Users, Ticket, TrendingUp } from "lucide-react"
+import { Package, Tag, Layers, ShoppingCart, Users, Ticket } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { useRouter } from "next/navigation"
@@ -19,7 +19,6 @@ export default function Dashboard() {
     coupons: 0,
   })
   const [recentOrders, setRecentOrders] = useState([])
-  const [popularProducts, setPopularProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
   const router = useRouter()
@@ -124,7 +123,7 @@ export default function Dashboard() {
         setRecentOrders(ordersData.slice(0, 5) || [])
 
         // Set popular products (for demo, just using first few products)
-        setPopularProducts(productsData.slice(0, 5) || [])
+        // SetPopularProducts(productsData.slice(0, 5) || [])
       } catch (error) {
         console.error("Dashboard data fetch error:", error)
         toast({
@@ -213,7 +212,7 @@ export default function Dashboard() {
           ))}
         </div>
 
-        <div className="mt-6 grid gap-6 md:grid-cols-2">
+        <div className="mt-6">
           <Card>
             <CardHeader>
               <CardTitle>Recent Orders</CardTitle>
@@ -250,50 +249,6 @@ export default function Dashboard() {
               ) : (
                 <div className="flex h-24 items-center justify-center">
                   <p className="text-sm text-muted-foreground">No recent orders to display</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Popular Products</CardTitle>
-              <CardDescription>Most viewed products</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-2">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-12 animate-pulse rounded bg-gray-200"></div>
-                  ))}
-                </div>
-              ) : popularProducts.length > 0 ? (
-                <div className="space-y-4">
-                  {popularProducts.map((product, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between border-b pb-2 cursor-pointer hover:bg-muted/50 p-2 rounded-md"
-                      onClick={() => router.push(`/dashboard/products/edit/${product._id}`)}
-                    >
-                      <div className="flex items-center">
-                        <div className="mr-2 h-8 w-8 rounded bg-gray-200 flex items-center justify-center">
-                          <Package className="h-4 w-4 text-gray-500" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{product.name}</p>
-                          <p className="text-sm text-muted-foreground">{product.category?.name || "Uncategorized"}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center">
-                        <p className="font-medium">₹{product.price}</p>
-                        <TrendingUp className="ml-2 h-4 w-4 text-green-500" />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex h-24 items-center justify-center">
-                  <p className="text-sm text-muted-foreground">No popular products to display</p>
                 </div>
               )}
             </CardContent>
