@@ -12,6 +12,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AlertCircle, Eye, EyeOff } from "lucide-react"
 import { login, isAuthenticated } from "@/lib/auth"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function LoginPage() {
   const [email, setEmail] = useState("")
@@ -22,6 +23,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
+  const { refreshAuth, isLoading: authLoading } = useAuth()
 
   useEffect(() => {
     setMounted(true)
@@ -29,21 +31,21 @@ export default function LoginPage() {
 
   // Check if user is already authenticated on mount
   useEffect(() => {
-    if (mounted) {
+    if (mounted && !authLoading) {
       const checkAuth = () => {
         try {
           if (isAuthenticated()) {
-            console.log("User is already authenticated, redirecting to dashboard")
+            console.log("Login page - User is already authenticated, redirecting to dashboard")
             router.replace("/dashboard")
           }
         } catch (error) {
-          console.error("Error checking authentication:", error)
+          console.error("Login page - Error checking authentication:", error)
         }
       }
 
       checkAuth()
     }
-  }, [mounted, router])
+  }, [mounted, authLoading, router])
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -64,17 +66,22 @@ export default function LoginPage() {
     }
 
     try {
-      console.log("Attempting login with:", { email, rememberMe })
+      console.log("Login page - Attempting login with:", { email, rememberMe })
       const result = await login(email, password, rememberMe)
-      console.log("Login result:", result)
+      console.log("Login page - Login result:", result)
 
       if (result.success) {
-        console.log("Login successful, redirecting to dashboard")
+        console.log("Login page - Login successful")
 
-        // Small delay to ensure state is updated
+        // Refresh the auth context to update the authentication state
+        const authUpdated = refreshAuth()
+        console.log("Login page - Auth context updated:", authUpdated)
+
+        // Small delay to ensure state is fully updated
         setTimeout(() => {
+          console.log("Login page - Redirecting to dashboard")
           router.replace("/dashboard")
-        }, 100)
+        }, 200)
       } else {
         // Handle specific error messages
         if (
@@ -92,7 +99,7 @@ export default function LoginPage() {
         setLoading(false)
       }
     } catch (err) {
-      console.error("Login error:", err)
+      console.error("Login page - Login error:", err)
       setError("An unexpected error occurred. Please try again.")
       setLoading(false)
     }
@@ -103,6 +110,18 @@ export default function LoginPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#28acc1] border-t-transparent"></div>
+      </div>
+    )
+  }
+
+  // Show loading if auth is still being checked
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center space-y-4">
+          <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#28acc1] border-t-transparent"></div>
+          <p className="text-sm text-gray-600">Checking authentication...</p>
+        </div>
       </div>
     )
   }

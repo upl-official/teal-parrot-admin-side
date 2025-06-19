@@ -14,19 +14,23 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const router = useRouter()
   const { isAuthenticated, isLoading } = useAuth()
   const [mounted, setMounted] = useState(false)
+  const [redirecting, setRedirecting] = useState(false)
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
   useEffect(() => {
-    if (mounted && !isLoading) {
+    if (mounted && !isLoading && !redirecting) {
+      console.log("Dashboard layout - Auth state:", { isAuthenticated, isLoading })
+
       if (!isAuthenticated) {
         console.log("Dashboard layout - User not authenticated, redirecting to login")
+        setRedirecting(true)
         router.replace("/login")
       }
     }
-  }, [mounted, isAuthenticated, isLoading, router])
+  }, [mounted, isAuthenticated, isLoading, redirecting, router])
 
   // Show loading spinner while checking authentication or not mounted
   if (!mounted || isLoading) {
@@ -40,13 +44,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
-  // Don't render dashboard if not authenticated
-  if (!isAuthenticated) {
+  // Show redirecting state
+  if (redirecting || !isAuthenticated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="flex flex-col items-center space-y-4">
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#28acc1] border-t-transparent"></div>
-          <p className="text-sm text-gray-600">Redirecting to login...</p>
+          <p className="text-sm text-gray-600">
+            {redirecting ? "Redirecting to login..." : "Checking authentication..."}
+          </p>
         </div>
       </div>
     )
