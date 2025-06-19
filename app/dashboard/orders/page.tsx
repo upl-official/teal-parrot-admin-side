@@ -11,6 +11,9 @@ import { fetchApi } from "@/lib/api"
 import { EnhancedPagination } from "@/components/ui/enhanced-pagination"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
+// ――― null-safe lower-case helper ―――
+const toLower = (v: unknown) => (typeof v === "string" ? v.toLowerCase() : "")
+
 export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
@@ -26,19 +29,24 @@ export default function OrdersPage() {
   // Filter orders
   const filteredOrders = orders
     .filter((order) => {
-      const matchesSearch =
-        order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.items.some((item) => item.product.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      const search = toLower(searchTerm)
 
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter
-      const matchesPayment = paymentFilter === "all" || order.paymentStatus === paymentFilter
+      /* ---------- search match ---------- */
+      const idMatch = toLower(order?.orderId ?? "").includes(search)
 
-      return matchesSearch && matchesStatus && matchesPayment
+      const itemMatch = order?.items?.some((it) => toLower(it?.product?.name ?? "").includes(search)) ?? false
+
+      /* ---------- status / payment match ---------- */
+      const matchesStatus = statusFilter === "all" || toLower(order?.status).trim() === statusFilter
+
+      const matchesPayment = paymentFilter === "all" || toLower(order?.paymentStatus).trim() === paymentFilter
+
+      return (idMatch || itemMatch) && matchesStatus && matchesPayment
     })
-    // Sort orders by placedAt timestamp
+    /* ---------- sort by date ---------- */
     .sort((a, b) => {
-      const dateA = new Date(a.placedAt).getTime()
-      const dateB = new Date(b.placedAt).getTime()
+      const dateA = new Date(a?.placedAt ?? 0).getTime()
+      const dateB = new Date(b?.placedAt ?? 0).getTime()
       return sortDirection === "asc" ? dateA - dateB : dateB - dateA
     })
 
@@ -87,27 +95,27 @@ export default function OrdersPage() {
     return new Date(dateString).toLocaleDateString() + " " + new Date(dateString).toLocaleTimeString()
   }
 
-  const getStatusBadge = (status) => {
-    switch (status?.toLowerCase()) {
+  const getStatusBadge = (status: string | undefined) => {
+    switch (toLower(status)) {
       case "pending":
-        return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Pending</Badge>
+        return <Badge className="bg-yellow-100 text-yellow-800">Pending</Badge>
       case "confirmed":
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Confirmed</Badge>
+        return <Badge className="bg-blue-100 text-blue-800">Confirmed</Badge>
       case "processing":
-        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Processing</Badge>
+        return <Badge className="bg-purple-100 text-purple-800">Processing</Badge>
       case "shipped":
-        return <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Shipped</Badge>
+        return <Badge className="bg-indigo-100 text-indigo-800">Shipped</Badge>
       case "delivered":
-        return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Delivered</Badge>
+        return <Badge className="bg-green-100 text-green-800">Delivered</Badge>
       case "cancelled":
-        return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Cancelled</Badge>
+        return <Badge className="bg-red-100 text-red-800">Cancelled</Badge>
       default:
-        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Unknown</Badge>
+        return <Badge className="bg-gray-100 text-gray-800">Unknown</Badge>
     }
   }
 
-  const getPaymentStatusBadge = (status) => {
-    switch (status?.toLowerCase()) {
+  const getPaymentStatusBadge = (status: string | undefined) => {
+    switch (toLower(status)) {
       case "pending":
         return (
           <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
@@ -300,18 +308,20 @@ export default function OrdersPage() {
                     </td>
                     <td className="p-2 hidden md:table-cell">
                       <div className="space-y-1">
-                        {order.items.slice(0, 2).map((item, index) => (
+                        {(order.items ?? []).slice(0, 2).map((item, index) => (
                           <div key={index} className="text-xs">
                             {item.product.name} (×{item.quantity})
                           </div>
                         ))}
-                        {order.items.length > 2 && (
+                        {(order.items?.length ?? 0) > 2 && (
                           <div className="text-xs text-muted-foreground">+{order.items.length - 2} more</div>
                         )}
                       </div>
                     </td>
                     <td className="p-2">
-                      <span className="font-medium">₹{order.totalPrice.toLocaleString()}</span>
+                      <span className="font-medium">
+                        ₹{typeof order.totalPrice === "number" ? order.totalPrice.toLocaleString() : "N/A"}
+                      </span>
                     </td>
                     <td className="p-2">{getStatusBadge(order.status)}</td>
                     <td className="p-2 hidden lg:table-cell">{getPaymentStatusBadge(order.paymentStatus)}</td>

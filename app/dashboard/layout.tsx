@@ -2,22 +2,31 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import Sidebar from "@/components/layout/sidebar"
 import Footer from "@/components/layout/footer"
 import { Toaster } from "@/components/ui/toaster"
 import { useAuth } from "@/contexts/auth-context"
 import { SessionWarning } from "@/components/auth/session-warning"
+import { cn } from "@/lib/utils"
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const { isAuthenticated, isLoading } = useAuth()
   const [mounted, setMounted] = useState(false)
   const [redirecting, setRedirecting] = useState(false)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true) // Default to collapsed
+  const [isMobile, setIsMobile] = useState(false)
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  // Handle sidebar state changes
+  const handleSidebarStateChange = useCallback((isCollapsed: boolean, mobile: boolean) => {
+    setSidebarCollapsed(isCollapsed)
+    setIsMobile(mobile)
   }, [])
 
   useEffect(() => {
@@ -58,19 +67,41 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     )
   }
 
+  // Calculate margin based on sidebar state
+  const getMainContentMargin = () => {
+    if (isMobile) {
+      return "lg:ml-0" // No margin on mobile
+    }
+    return sidebarCollapsed ? "lg:ml-16" : "lg:ml-64" // Dynamic margin based on sidebar state
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
-      <Sidebar />
+      <Sidebar onStateChange={handleSidebarStateChange} />
 
-      {/* Main content area with proper spacing for sidebar */}
-      <div className="lg:ml-64 transition-all duration-200 ease-in-out">
+      {/* Main content area with dynamic spacing for sidebar */}
+      <div className={cn("transition-all duration-300 ease-in-out min-h-screen", getMainContentMargin())}>
         <div className="flex flex-col min-h-screen">
           {/* Session warning at the top */}
           <SessionWarning />
 
-          {/* Main content */}
-          <main className="flex-1 p-4 lg:p-6">
-            <div className="max-w-7xl mx-auto">{children}</div>
+          {/* Main content with dynamic padding */}
+          <main
+            className={cn(
+              "flex-1 transition-all duration-300 ease-in-out",
+              // Add extra padding when sidebar is collapsed to utilize space better
+              sidebarCollapsed && !isMobile && "lg:px-0 xl:px-0",
+            )}
+          >
+            <div
+              className={cn(
+                "mx-auto transition-all duration-300 ease-in-out",
+                // Dynamic max-width based on sidebar state
+                sidebarCollapsed && !isMobile ? "max-w-full" : "max-w-full",
+              )}
+            >
+              {children}
+            </div>
           </main>
 
           {/* Footer */}
