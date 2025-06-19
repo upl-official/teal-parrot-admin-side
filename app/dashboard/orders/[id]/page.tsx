@@ -5,17 +5,15 @@ import { useRouter } from "next/navigation"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { ArrowLeft, Package, User, MapPin, Calendar, CreditCard, Truck } from "lucide-react"
+import { ArrowLeft, Package, MapPin, Calendar, CreditCard } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 export default function OrderDetailPage({ params }) {
   const orderId = params.id
   const [order, setOrder] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [updatingStatus, setUpdatingStatus] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
@@ -26,35 +24,20 @@ export default function OrderDetailPage({ params }) {
   const fetchOrderDetails = async () => {
     try {
       setLoading(true)
+      // Fetch all orders and find the specific one
+      const response = await fetchApi("/api/v1/admin/user-order/list")
 
-      // Try multiple possible order endpoints
-      const orderEndpoints = [
-        `/api/v1/admin/order/detail?orderId=${orderId}`,
-        `/api/v1/users/order/detail?orderId=${orderId}`,
-      ]
-
-      let orderData = null
-      let fetchSuccess = false
-
-      for (const endpoint of orderEndpoints) {
-        try {
-          console.log(`Trying to fetch order details from: ${endpoint}`)
-          const response = await fetchApi(endpoint)
-          // Handle nested data structure
-          const data = response.data || response
-          if (data && (data.order || data._id)) {
-            console.log(`Successfully fetched order details from ${endpoint}`)
-            orderData = data.order || data
-            fetchSuccess = true
-            break
-          }
-        } catch (error) {
-          console.log(`Failed to fetch order details from ${endpoint}:`, error.message)
+      if (response.success && response.data) {
+        const foundOrder = response.data.find((order) => order.orderId === orderId)
+        if (foundOrder) {
+          setOrder(foundOrder)
+        } else {
+          toast({
+            variant: "destructive",
+            title: "Error",
+            description: "Order not found",
+          })
         }
-      }
-
-      if (fetchSuccess) {
-        setOrder(orderData)
       } else {
         toast({
           variant: "destructive",
@@ -63,6 +46,7 @@ export default function OrderDetailPage({ params }) {
         })
       }
     } catch (error) {
+      console.error("Error fetching order details:", error)
       toast({
         variant: "destructive",
         title: "Error",
@@ -73,55 +57,67 @@ export default function OrderDetailPage({ params }) {
     }
   }
 
-  const updateOrderStatus = async (newStatus) => {
+  const formatDate = (dateString) => {
+    if (!dateString) return "N/A"
     try {
-      setUpdatingStatus(true)
-
-      await fetchApi("/api/v1/admin/order/update-status", {
-        method: "PUT",
-        body: JSON.stringify({
-          orderId,
-          status: newStatus,
-        }),
-      })
-
-      toast({
-        title: "Success",
-        description: "Order status updated successfully",
-      })
-
-      // Refresh order details
-      fetchOrderDetails()
+      return new Date(dateString).toLocaleDateString() + " " + new Date(dateString).toLocaleTimeString()
     } catch (error) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "Failed to update order status",
-      })
-    } finally {
-      setUpdatingStatus(false)
+      return "Invalid Date"
     }
   }
 
-  const formatDate = (dateString) => {
-    if (!dateString) return "N/A"
-    return new Date(dateString).toLocaleDateString() + " " + new Date(dateString).toLocaleTimeString()
+  const formatPrice = (price) => {
+    if (price === null || price === undefined || isNaN(price)) {
+      return "N/A"
+    }
+    return `₹${Number(price).toLocaleString()}`
   }
 
   const getStatusBadge = (status) => {
     switch (status?.toLowerCase()) {
       case "pending":
         return <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Pending</Badge>
+      case "confirmed":
+        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Confirmed</Badge>
       case "processing":
-        return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Processing</Badge>
+        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Processing</Badge>
       case "shipped":
-        return <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100">Shipped</Badge>
+        return <Badge className="bg-indigo-100 text-indigo-800 hover:bg-indigo-100">Shipped</Badge>
       case "delivered":
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Delivered</Badge>
       case "cancelled":
         return <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Cancelled</Badge>
       default:
-        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Processing</Badge>
+        return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Unknown</Badge>
+    }
+  }
+
+  const getPaymentStatusBadge = (status) => {
+    switch (status?.toLowerCase()) {
+      case "pending":
+        return (
+          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+            Pending
+          </Badge>
+        )
+      case "completed":
+        return (
+          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+            Completed
+          </Badge>
+        )
+      case "failed":
+        return (
+          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+            Failed
+          </Badge>
+        )
+      default:
+        return (
+          <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-200">
+            Unknown
+          </Badge>
+        )
     }
   }
 
@@ -168,25 +164,10 @@ export default function OrderDetailPage({ params }) {
         <div className="grid gap-6 md:grid-cols-3">
           <Card className="md:col-span-2">
             <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle>Order #{order._id?.substring(0, 8) || "N/A"}</CardTitle>
+              <CardTitle>Order #{order.orderId?.substring(0, 8) || "Unknown"}</CardTitle>
               <div className="flex items-center gap-2">
                 {getStatusBadge(order.status)}
-                <Select
-                  value={order.status?.toLowerCase() || "processing"}
-                  onValueChange={updateOrderStatus}
-                  disabled={updatingStatus}
-                >
-                  <SelectTrigger className="w-[180px]">
-                    <SelectValue placeholder="Update Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="processing">Processing</SelectItem>
-                    <SelectItem value="shipped">Shipped</SelectItem>
-                    <SelectItem value="delivered">Delivered</SelectItem>
-                    <SelectItem value="cancelled">Cancelled</SelectItem>
-                  </SelectContent>
-                </Select>
+                {getPaymentStatusBadge(order.paymentStatus)}
               </div>
             </CardHeader>
             <CardContent>
@@ -196,16 +177,19 @@ export default function OrderDetailPage({ params }) {
                   <div className="grid gap-4 md:grid-cols-2">
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Order Date: {formatDate(order.createdAt)}</span>
+                      <span className="text-sm">Order Date: {formatDate(order.placedAt)}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Payment Method: {order.paymentMethod || "Cash on Delivery"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Truck className="h-4 w-4 text-muted-foreground" />
-                      <span className="text-sm">Shipping Method: {order.shippingMethod || "Standard Delivery"}</span>
-                    </div>
+                    {order.paymentDetails?.paymentMethod && (
+                      <div className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4 text-muted-foreground" />
+                        <span className="text-sm">Payment Method: {order.paymentDetails.paymentMethod}</span>
+                      </div>
+                    )}
+                    {order.paymentDetails?.transactionId && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">Transaction ID: {order.paymentDetails.transactionId}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -222,49 +206,63 @@ export default function OrderDetailPage({ params }) {
                         </tr>
                       </thead>
                       <tbody>
-                        <tr className="border-b">
-                          <td className="p-4">
-                            <div className="flex items-center gap-3">
-                              <div className="h-10 w-10 rounded bg-gray-200 flex items-center justify-center">
-                                <Package className="h-5 w-5 text-gray-500" />
-                              </div>
-                              <div>
-                                <p className="font-medium">{order.productId?.name || "Unknown Product"}</p>
-                                <p className="text-xs text-muted-foreground">
-                                  {order.productId?.category?.name || "Uncategorized"}
-                                </p>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-4">₹{order.productId?.price || "N/A"}</td>
-                          <td className="p-4">{order.quantity || 1}</td>
-                          <td className="p-4 text-right">₹{order.totalAmount || "N/A"}</td>
-                        </tr>
+                        {order.items && order.items.length > 0 ? (
+                          order.items.map((item, index) => (
+                            <tr key={index} className="border-b">
+                              <td className="p-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="h-12 w-12 rounded bg-gray-200 flex items-center justify-center overflow-hidden">
+                                    {item.product?.image ? (
+                                      <img
+                                        src={item.product.image || "/placeholder.svg"}
+                                        alt={item.product?.name || "Product"}
+                                        className="h-full w-full object-cover"
+                                        onError={(e) => {
+                                          e.target.style.display = "none"
+                                          e.target.nextSibling.style.display = "flex"
+                                        }}
+                                      />
+                                    ) : null}
+                                    <Package className="h-6 w-6 text-gray-500" />
+                                  </div>
+                                  <div>
+                                    <p className="font-medium">{item.product?.name || "Unknown Product"}</p>
+                                    <div className="text-xs text-muted-foreground space-y-1">
+                                      {item.product?.category && <p>Category: {item.product.category}</p>}
+                                      {item.product?.material && <p>Material: {item.product.material}</p>}
+                                      {item.product?.grade && <p>Grade: {item.product.grade}</p>}
+                                      {item.product?.size && <p>Size: {item.product.size}</p>}
+                                      {item.product?.gem && <p>Gem: {item.product.gem}</p>}
+                                      {item.product?.coating && <p>Coating: {item.product.coating}</p>}
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4">{formatPrice(item.product?.price)}</td>
+                              <td className="p-4">{item.quantity || 0}</td>
+                              <td className="p-4 text-right">{formatPrice(item.totalItemPrice)}</td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={4} className="p-4 text-center text-muted-foreground">
+                              No items found
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                       <tfoot>
                         <tr className="border-t">
                           <td colSpan={3} className="p-4 text-right font-medium">
                             Subtotal
                           </td>
-                          <td className="p-4 text-right">₹{order.totalAmount || "N/A"}</td>
-                        </tr>
-                        <tr>
-                          <td colSpan={3} className="p-4 text-right font-medium">
-                            Shipping
-                          </td>
-                          <td className="p-4 text-right">₹{order.shippingCost || "0"}</td>
-                        </tr>
-                        <tr>
-                          <td colSpan={3} className="p-4 text-right font-medium">
-                            Discount
-                          </td>
-                          <td className="p-4 text-right">-₹{order.discount || "0"}</td>
+                          <td className="p-4 text-right">{formatPrice(order.orderSummary?.subtotal)}</td>
                         </tr>
                         <tr className="border-t">
                           <td colSpan={3} className="p-4 text-right font-medium">
                             Total
                           </td>
-                          <td className="p-4 text-right font-bold">₹{order.totalAmount || "N/A"}</td>
+                          <td className="p-4 text-right font-bold">{formatPrice(order.totalPrice)}</td>
                         </tr>
                       </tfoot>
                     </table>
@@ -277,22 +275,17 @@ export default function OrderDetailPage({ params }) {
           <div className="space-y-6">
             <Card>
               <CardHeader>
-                <CardTitle>Customer Information</CardTitle>
+                <CardTitle>Shipping Address</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-primary flex items-center justify-center text-primary-foreground">
-                      <User className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <p className="font-medium">{order.userId?.name || "Anonymous"}</p>
-                      <p className="text-sm text-muted-foreground">{order.userId?.email || "No email provided"}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Phone className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm">{order.userId?.phone || "No phone provided"}</span>
+                <div className="flex items-start gap-3">
+                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
+                  <div>
+                    <p className="font-medium">{order.shippingAddress?.address || "No address provided"}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {order.shippingAddress?.city || "N/A"}, {order.shippingAddress?.state || "N/A"}
+                    </p>
+                    <p className="text-sm text-muted-foreground">Pincode: {order.shippingAddress?.pincode || "N/A"}</p>
                   </div>
                 </div>
               </CardContent>
@@ -300,17 +293,21 @@ export default function OrderDetailPage({ params }) {
 
             <Card>
               <CardHeader>
-                <CardTitle>Shipping Address</CardTitle>
+                <CardTitle>Order Summary</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="flex items-start gap-3">
-                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div>
-                    <p className="font-medium">{order.addressId?.address || "No address provided"}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {order.addressId?.city || ""}, {order.addressId?.state || ""}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Pincode: {order.addressId?.pincode || "N/A"}</p>
+                <div className="space-y-2">
+                  <div className="flex justify-between">
+                    <span>Total Items:</span>
+                    <span>{order.orderSummary?.totalItems || 0}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Subtotal:</span>
+                    <span>{formatPrice(order.orderSummary?.subtotal)}</span>
+                  </div>
+                  <div className="flex justify-between font-medium">
+                    <span>Total:</span>
+                    <span>{formatPrice(order.totalPrice)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -329,52 +326,23 @@ export default function OrderDetailPage({ params }) {
                     </div>
                     <div>
                       <p className="font-medium">Order Placed</p>
-                      <p className="text-sm text-muted-foreground">{formatDate(order.createdAt)}</p>
+                      <p className="text-sm text-muted-foreground">{formatDate(order.placedAt)}</p>
                     </div>
                   </div>
-                  {order.status && order.status.toLowerCase() !== "pending" && (
+                  {order.status && order.status !== "pending" && (
                     <div className="flex items-start gap-3">
                       <div className="relative mt-0.5">
-                        <div className="h-2 w-2 rounded-full bg-blue-500"></div>
-                        <div className="absolute left-1 top-2 h-full w-px bg-border"></div>
+                        <div
+                          className={`h-2 w-2 rounded-full ${
+                            order.status === "cancelled" ? "bg-red-500" : "bg-blue-500"
+                          }`}
+                        ></div>
                       </div>
                       <div>
-                        <p className="font-medium">Order Processing</p>
-                        <p className="text-sm text-muted-foreground">{formatDate(order.updatedAt)}</p>
-                      </div>
-                    </div>
-                  )}
-                  {order.status && ["shipped", "delivered"].includes(order.status.toLowerCase()) && (
-                    <div className="flex items-start gap-3">
-                      <div className="relative mt-0.5">
-                        <div className="h-2 w-2 rounded-full bg-purple-500"></div>
-                        <div className="absolute left-1 top-2 h-full w-px bg-border"></div>
-                      </div>
-                      <div>
-                        <p className="font-medium">Order Shipped</p>
-                        <p className="text-sm text-muted-foreground">{formatDate(order.updatedAt)}</p>
-                      </div>
-                    </div>
-                  )}
-                  {order.status && order.status.toLowerCase() === "delivered" && (
-                    <div className="flex items-start gap-3">
-                      <div className="relative mt-0.5">
-                        <div className="h-2 w-2 rounded-full bg-green-500"></div>
-                      </div>
-                      <div>
-                        <p className="font-medium">Order Delivered</p>
-                        <p className="text-sm text-muted-foreground">{formatDate(order.updatedAt)}</p>
-                      </div>
-                    </div>
-                  )}
-                  {order.status && order.status.toLowerCase() === "cancelled" && (
-                    <div className="flex items-start gap-3">
-                      <div className="relative mt-0.5">
-                        <div className="h-2 w-2 rounded-full bg-red-500"></div>
-                      </div>
-                      <div>
-                        <p className="font-medium">Order Cancelled</p>
-                        <p className="text-sm text-muted-foreground">{formatDate(order.updatedAt)}</p>
+                        <p className="font-medium">
+                          {order.status === "cancelled" ? "Order Cancelled" : "Order Confirmed"}
+                        </p>
+                        <p className="text-sm text-muted-foreground">Status updated</p>
                       </div>
                     </div>
                   )}
@@ -387,5 +355,3 @@ export default function OrderDetailPage({ params }) {
     </div>
   )
 }
-
-import { Phone } from "lucide-react"

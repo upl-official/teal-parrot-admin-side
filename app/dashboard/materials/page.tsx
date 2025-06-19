@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input"
 import { Plus, Pencil, Trash, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
-import { DataTable } from "@/components/ui/data-table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
@@ -29,15 +28,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { EnhancedPagination } from "@/components/ui/enhanced-pagination"
 
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState([])
+  const [filteredMaterials, setFilteredMaterials] = useState([])
   const [loading, setLoading] = useState(true)
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false)
   const [materialName, setMaterialName] = useState("")
   const [editMaterialId, setEditMaterialId] = useState(null)
   const [nameError, setNameError] = useState("")
+  const [searchTerm, setSearchTerm] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
   const { toast } = useToast()
 
   // State for deletion dialog
@@ -52,6 +56,19 @@ export default function MaterialsPage() {
   useEffect(() => {
     fetchMaterials()
   }, [])
+
+  useEffect(() => {
+    // Filter materials based on search term
+    if (searchTerm.trim() === "") {
+      setFilteredMaterials(materials)
+    } else {
+      const filtered = materials.filter((material) =>
+        material.material.toLowerCase().includes(searchTerm.toLowerCase()),
+      )
+      setFilteredMaterials(filtered)
+    }
+    setCurrentPage(1) // Reset to first page when search changes
+  }, [materials, searchTerm])
 
   const fetchMaterials = async () => {
     try {
@@ -296,69 +313,33 @@ export default function MaterialsPage() {
     setIsEditDialogOpen(true)
   }
 
-  const columns = [
-    {
-      key: "material",
-      header: "Material",
-      cell: (row) => <span className="font-medium">{row.material}</span>,
-    },
-    {
-      key: "productCount",
-      header: "Products",
-      cell: (row) => (
-        <div className="flex items-center">
-          {productCountsLoading[row._id] ? (
-            <div className="flex items-center">
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              <span className="text-muted-foreground">Loading...</span>
-            </div>
-          ) : (
-            <span className="font-medium">{row.productCount || 0}</span>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "actions",
-      header: "",
-      cell: (row) => (
-        <div className="flex justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => openEditDialog(row)}
-            className="h-8 w-8"
-            title="Edit Material"
-          >
-            <Pencil className="h-4 w-4" />
-            <span className="sr-only">Edit</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => confirmDeleteMaterial(row)}
-            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-            title="Delete Material"
-          >
-            {productCountsLoading[row._id] ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Trash className="h-4 w-4" />
-            )}
-            <span className="sr-only">Delete</span>
-          </Button>
-        </div>
-      ),
-      className: "text-right",
-    },
-  ]
+  // Calculate pagination
+  const totalItems = filteredMaterials.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentMaterials = filteredMaterials.slice(startIndex, endIndex)
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page)
+  }
+
+  const handleItemsPerPageChange = (newItemsPerPage) => {
+    setItemsPerPage(newItemsPerPage)
+    setCurrentPage(1) // Reset to first page
+  }
 
   return (
     <div>
       <Header title="Materials" />
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold">All Materials</h2>
+          <div>
+            <h2 className="text-lg font-semibold">All Materials</h2>
+            <p className="text-sm text-muted-foreground">
+              {totalItems} {totalItems === 1 ? "material" : "materials"} total
+            </p>
+          </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-[#28acc1] hover:bg-[#1e8a9a]">
@@ -401,6 +382,34 @@ export default function MaterialsPage() {
           </Dialog>
         </div>
 
+        {/* Search Input */}
+        <div className="relative mb-6">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <svg
+              className="w-4 h-4 text-gray-500"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 20 20"
+            >
+              <path
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"
+              />
+            </svg>
+          </div>
+          <input
+            type="search"
+            className="block w-full p-2 pl-10 text-sm border rounded-lg bg-background"
+            placeholder="Search materials..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -435,13 +444,92 @@ export default function MaterialsPage() {
           </DialogContent>
         </Dialog>
 
-        <DataTable
-          columns={columns}
-          data={materials}
-          searchKey="material"
-          searchPlaceholder="Search materials..."
-          itemsPerPage={10}
-          loading={loading}
+        {/* Materials Table */}
+        <div className="rounded-md border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="h-10 px-2 text-left font-medium">Material</th>
+                <th className="h-10 px-2 text-left font-medium">Products</th>
+                <th className="h-10 px-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={3} className="h-24 text-center">
+                    <div className="flex justify-center items-center h-full">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                    </div>
+                  </td>
+                </tr>
+              ) : currentMaterials.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="h-24 text-center">
+                    {searchTerm ? "No materials found matching your search." : "No materials found."}
+                  </td>
+                </tr>
+              ) : (
+                currentMaterials.map((material) => (
+                  <tr key={material._id} className="border-b hover:bg-muted/50">
+                    <td className="p-2">
+                      <span className="font-medium">{material.material}</span>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center">
+                        {productCountsLoading[material._id] ? (
+                          <div className="flex items-center">
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            <span className="text-muted-foreground">Loading...</span>
+                          </div>
+                        ) : (
+                          <span className="font-medium">{material.productCount || 0}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(material)}
+                          className="h-8 w-8"
+                          title="Edit Material"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">Edit</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => confirmDeleteMaterial(material)}
+                          className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          title="Delete Material"
+                        >
+                          {productCountsLoading[material._id] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash className="h-4 w-4" />
+                          )}
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Enhanced Pagination */}
+        <EnhancedPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={handlePageChange}
+          onItemsPerPageChange={handleItemsPerPageChange}
         />
 
         {/* Completely separate dialogs for different cases */}

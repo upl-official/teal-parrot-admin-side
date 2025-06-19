@@ -1,12 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import Header from "@/components/layout/header"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Package, Tag, Layers, ShoppingCart, Users, Ticket } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
-import { useRouter } from "next/navigation"
+import { useAuth } from "@/contexts/auth-context"
 
 export default function Dashboard() {
   const [stats, setStats] = useState({
@@ -22,6 +23,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const { toast } = useToast()
   const router = useRouter()
+  const { isAuthenticated: authIsAuthenticated, isLoading: authIsLoading } = useAuth()
 
   // Function to safely fetch data with fallback
   const safelyFetchData = async (endpoint, fallback = []) => {
@@ -45,6 +47,11 @@ export default function Dashboard() {
   }
 
   useEffect(() => {
+    // Don't fetch data if auth is still loading or user is not authenticated
+    if (authIsLoading || !authIsAuthenticated) {
+      return
+    }
+
     const fetchDashboardData = async () => {
       try {
         setLoading(true)
@@ -66,7 +73,7 @@ export default function Dashboard() {
           safelyFetchData("/api/v1/grade/gra-list/", []),
           safelyFetchData("/api/v1/coupon/coupon-list/", []),
           safelyFetchData("/api/v1/admin/user/list", []),
-          safelyFetchData("/api/v1/admin/order/list", { orders: [] }),
+          safelyFetchData("/api/v1/admin/user-order/list", { orders: [] }),
         ])
 
         console.log("Categories response:", categoriesResponse)
@@ -121,15 +128,12 @@ export default function Dashboard() {
 
         // Set recent orders
         setRecentOrders(ordersData.slice(0, 5) || [])
-
-        // Set popular products (for demo, just using first few products)
-        // SetPopularProducts(productsData.slice(0, 5) || [])
       } catch (error) {
         console.error("Dashboard data fetch error:", error)
         toast({
           variant: "destructive",
           title: "Error",
-          description: "Some dashboard data could not be loaded",
+          description: "Some dashboard data could not be loaded. Please try refreshing the page.",
         })
       } finally {
         setLoading(false)
@@ -137,7 +141,37 @@ export default function Dashboard() {
     }
 
     fetchDashboardData()
-  }, [toast])
+  }, [toast, authIsAuthenticated, authIsLoading])
+
+  // Show loading state while auth is being checked
+  if (authIsLoading) {
+    return (
+      <div>
+        <Header title="Dashboard" />
+        <div className="p-6">
+          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {[...Array(6)].map((_, i) => (
+              <Card key={i}>
+                <CardHeader className="flex flex-row items-center justify-between pb-2">
+                  <div className="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+                  <div className="h-8 w-8 animate-pulse rounded-full bg-gray-200"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-8 w-16 animate-pulse rounded bg-gray-200"></div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Redirect to login if not authenticated
+  if (!authIsAuthenticated) {
+    router.push("/login")
+    return null
+  }
 
   const statCards = [
     {

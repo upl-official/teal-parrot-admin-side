@@ -5,82 +5,80 @@ import { useRouter } from "next/navigation"
 import Header from "@/components/layout/header"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Eye, MapPin, Calendar } from "lucide-react"
+import { ArrowLeft, Eye, Calendar } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
 import { EnhancedPagination } from "@/components/ui/enhanced-pagination"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
-export default function OrdersPage() {
+export default function UserOrdersPage({ params }) {
+  const userId = params.id
+  const [user, setUser] = useState(null)
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
+  const [userLoading, setUserLoading] = useState(true)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [paymentFilter, setPaymentFilter] = useState("all")
-  const [sortDirection, setSortDirection] = useState("desc") // Default to descending (newest first)
   const router = useRouter()
   const { toast } = useToast()
 
-  // Filter orders
-  const filteredOrders = orders
-    .filter((order) => {
-      const matchesSearch =
-        order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.items.some((item) => item.product.name.toLowerCase().includes(searchTerm.toLowerCase()))
-
-      const matchesStatus = statusFilter === "all" || order.status === statusFilter
-      const matchesPayment = paymentFilter === "all" || order.paymentStatus === paymentFilter
-
-      return matchesSearch && matchesStatus && matchesPayment
-    })
-    // Sort orders by placedAt timestamp
-    .sort((a, b) => {
-      const dateA = new Date(a.placedAt).getTime()
-      const dateB = new Date(b.placedAt).getTime()
-      return sortDirection === "asc" ? dateA - dateB : dateB - dateA
-    })
-
-  const totalItems = filteredOrders.length
-  const totalPages = Math.ceil(totalItems / itemsPerPage)
-  const startIndex = (currentPage - 1) * itemsPerPage
-  const currentOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage)
-
   useEffect(() => {
-    fetchOrders()
-  }, [])
+    fetchUserDetails()
+    fetchUserOrders()
+  }, [userId])
 
-  useEffect(() => {
-    setCurrentPage(1) // Reset to first page when filters change
-  }, [searchTerm, statusFilter, paymentFilter, sortDirection])
+  const fetchUserDetails = async () => {
+    try {
+      setUserLoading(true)
+      const response = await fetchApi(`/api/v1/admin/user/list?userId=${userId}`)
 
-  const fetchOrders = async () => {
+      if (response.success && response.data) {
+        setUser(response.data)
+      }
+    } catch (error) {
+      console.error("Failed to fetch user details:", error)
+    } finally {
+      setUserLoading(false)
+    }
+  }
+
+  const fetchUserOrders = async () => {
     try {
       setLoading(true)
-      const response = await fetchApi("/api/v1/admin/user-order/list")
+      const response = await fetchApi(`/api/v1/admin/user-order/list?user=${userId}`)
 
       if (response.success && response.data) {
         setOrders(response.data)
       } else {
         setOrders([])
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: "Failed to fetch orders",
-        })
       }
     } catch (error) {
       toast({
         variant: "destructive",
         title: "Error",
-        description: "Failed to fetch orders",
+        description: "Failed to fetch user orders",
       })
       setOrders([])
     } finally {
       setLoading(false)
     }
   }
+
+  // Filter orders based on search term
+  const filteredOrders = orders.filter((order) => {
+    if (!searchTerm.trim()) return true
+
+    return (
+      order.orderId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      order.items.some((item) => item.product.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    )
+  })
+
+  // Calculate pagination
+  const totalItems = filteredOrders.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const currentOrders = filteredOrders.slice(startIndex, startIndex + itemsPerPage)
 
   const formatDate = (dateString) => {
     if (!dateString) return "N/A"
@@ -146,112 +144,53 @@ export default function OrdersPage() {
 
   return (
     <div>
-      <Header title="Orders" />
+      <Header title="User Orders" />
       <div className="p-6">
+        <Button variant="outline" className="mb-6" onClick={() => router.back()}>
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Back to User Details
+        </Button>
+
         <div className="flex justify-between items-center mb-6">
           <div>
-            <h2 className="text-lg font-semibold">All Orders</h2>
+            <h2 className="text-lg font-semibold">
+              Orders for {userLoading ? "Loading..." : user?.name || "Unknown User"}
+            </h2>
             <p className="text-sm text-muted-foreground">
               {totalItems} {totalItems === 1 ? "order" : "orders"} total
             </p>
           </div>
         </div>
 
-        {/* Filters */}
-        <div className="grid grid-cols-1 gap-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Search Input */}
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
-                <svg
-                  className="w-4 h-4 text-gray-500"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="none"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    stroke="currentColor"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth="2"
-                    d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"
-                  />
-                </svg>
-              </div>
-              <input
-                type="search"
-                className="block w-full p-2 pl-10 text-sm border rounded-lg bg-background"
-                placeholder="Search orders..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-
-            {/* Status Filter */}
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="pending">Pending</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
-                <SelectItem value="processing">Processing</SelectItem>
-                <SelectItem value="shipped">Shipped</SelectItem>
-                <SelectItem value="delivered">Delivered</SelectItem>
-                <SelectItem value="cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Payment Filter */}
-            <Select value={paymentFilter} onValueChange={setPaymentFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Filter by payment" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Payments</SelectItem>
-                <SelectItem value="pending">Payment Pending</SelectItem>
-                <SelectItem value="completed">Payment Completed</SelectItem>
-                <SelectItem value="failed">Payment Failed</SelectItem>
-              </SelectContent>
-            </Select>
-
-            {/* Clear Filters */}
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSearchTerm("")
-                setStatusFilter("all")
-                setPaymentFilter("all")
-              }}
+        {/* Search Input */}
+        <div className="relative mb-6">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <svg
+              className="w-4 h-4 text-gray-500"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 20 20"
             >
-              Clear Filters
-            </Button>
+              <path
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"
+              />
+            </svg>
           </div>
-
-          {/* Sort Controls */}
-          <div className="flex justify-end items-center">
-            <div className="flex items-center space-x-2">
-              <span className="text-sm text-muted-foreground mr-2">Sort by date:</span>
-              <Button
-                size="sm"
-                variant={sortDirection === "desc" ? "default" : "outline"}
-                onClick={() => setSortDirection("desc")}
-                className="h-9"
-              >
-                Newest First
-              </Button>
-              <Button
-                size="sm"
-                variant={sortDirection === "asc" ? "default" : "outline"}
-                onClick={() => setSortDirection("asc")}
-                className="h-9"
-              >
-                Oldest First
-              </Button>
-            </div>
-          </div>
+          <input
+            type="search"
+            className="block w-full p-2 pl-10 text-sm border rounded-lg bg-background"
+            placeholder="Search orders..."
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value)
+              setCurrentPage(1)
+            }}
+          />
         </div>
 
         {/* Orders Table */}
@@ -265,14 +204,13 @@ export default function OrdersPage() {
                 <th className="h-10 px-2 text-left font-medium">Total</th>
                 <th className="h-10 px-2 text-left font-medium">Status</th>
                 <th className="h-10 px-2 text-left font-medium hidden lg:table-cell">Payment</th>
-                <th className="h-10 px-2 text-left font-medium hidden lg:table-cell">Address</th>
                 <th className="h-10 px-2 text-right font-medium">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="h-24 text-center">
+                  <td colSpan={7} className="h-24 text-center">
                     <div className="flex justify-center items-center h-full">
                       <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
                     </div>
@@ -280,10 +218,8 @@ export default function OrdersPage() {
                 </tr>
               ) : currentOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="h-24 text-center">
-                    {searchTerm || statusFilter !== "all" || paymentFilter !== "all"
-                      ? "No orders found matching your filters."
-                      : "No orders found."}
+                  <td colSpan={7} className="h-24 text-center">
+                    {searchTerm ? "No orders found matching your search." : "No orders found for this user."}
                   </td>
                 </tr>
               ) : (
@@ -315,14 +251,6 @@ export default function OrdersPage() {
                     </td>
                     <td className="p-2">{getStatusBadge(order.status)}</td>
                     <td className="p-2 hidden lg:table-cell">{getPaymentStatusBadge(order.paymentStatus)}</td>
-                    <td className="p-2 hidden lg:table-cell">
-                      <div className="flex items-center text-xs">
-                        <MapPin className="mr-1 h-3 w-3 text-muted-foreground" />
-                        <span>
-                          {order.shippingAddress.city}, {order.shippingAddress.state}
-                        </span>
-                      </div>
-                    </td>
                     <td className="p-2 text-right">
                       <div className="flex justify-end gap-2">
                         <Button

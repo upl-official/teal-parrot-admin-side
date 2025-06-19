@@ -14,16 +14,25 @@ export function middleware(request: NextRequest) {
 
   // Define paths that are accessible without authentication
   const isPublicPath = path === "/login"
+  const isAuthTestPath = path === "/auth-test"
+  const isRedirectPath = path === "/redirect"
 
   // Get the token from cookies
   const token = request.cookies.get("adminToken")?.value || ""
 
-  console.log(`Middleware check: Path=${path}, isPublicPath=${isPublicPath}, hasToken=${!!token}`)
+  console.log(`Middleware check: Path=${path}, hasToken=${!!token}`)
+
+  // Handle auth test and redirect paths
+  if (isAuthTestPath || isRedirectPath) {
+    const response = NextResponse.next()
+    response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+    return response
+  }
 
   // Redirect logic based on authentication status
   if (isPublicPath && token) {
-    // If user is on a public path but has a token, redirect to dashboard
-    console.log("Middleware: User has token on public path, redirecting to dashboard")
+    // If user is on login page but has a token, redirect to dashboard
+    console.log("Middleware: User has token on login page, redirecting to dashboard")
     return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
@@ -44,10 +53,17 @@ export function middleware(request: NextRequest) {
   response.headers.set("X-XSS-Protection", "1; mode=block")
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin")
 
+  // Add cache control for auth-related pages
+  if (!isPublicPath) {
+    response.headers.set("Cache-Control", "no-cache, no-store, must-revalidate")
+    response.headers.set("Pragma", "no-cache")
+    response.headers.set("Expires", "0")
+  }
+
   return response
 }
 
 // Specify paths to run middleware on
 export const config = {
-  matcher: ["/login", "/dashboard/:path*"],
+  matcher: ["/login", "/dashboard/:path*", "/auth-test", "/redirect"],
 }

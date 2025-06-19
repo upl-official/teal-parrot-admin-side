@@ -17,7 +17,6 @@ import { Input } from "@/components/ui/input"
 import { Plus, Pencil, Trash, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 import { fetchApi } from "@/lib/api"
-import { DataTable } from "@/components/ui/data-table"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertDialog,
@@ -29,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import { EnhancedPagination } from "@/components/ui/enhanced-pagination"
 
 export default function GradesPage() {
   const [grades, setGrades] = useState([])
@@ -49,9 +49,25 @@ export default function GradesPage() {
   // Track loading state for individual product counts
   const [productCountsLoading, setProductCountsLoading] = useState({})
 
+  const [filteredGrades, setFilteredGrades] = useState([])
+  const [searchTerm, setSearchTerm] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+
   useEffect(() => {
     fetchGrades()
   }, [])
+
+  useEffect(() => {
+    // Filter grades based on search term
+    if (searchTerm.trim() === "") {
+      setFilteredGrades(grades)
+    } else {
+      const filtered = grades.filter((grade) => grade.grade.toLowerCase().includes(searchTerm.toLowerCase()))
+      setFilteredGrades(filtered)
+    }
+    setCurrentPage(1) // Reset to first page when search changes
+  }, [grades, searchTerm])
 
   const fetchGrades = async () => {
     try {
@@ -294,6 +310,22 @@ export default function GradesPage() {
     setIsEditDialogOpen(true)
   }
 
+  // Calculate pagination
+  const totalItems = filteredGrades.length
+  const totalPages = Math.ceil(totalItems / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const currentGrades = filteredGrades.slice(startIndex, endIndex)
+
+  const handlePageChange = (page) => {
+    setCurrentPage(page)
+  }
+
+  const handleItemsPerPageChange = (newItemsPerPage) => {
+    setItemsPerPage(newItemsPerPage)
+    setCurrentPage(1) // Reset to first page
+  }
+
   const columns = [
     {
       key: "grade",
@@ -356,7 +388,12 @@ export default function GradesPage() {
       <Header title="Grades" />
       <div className="p-6">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-lg font-semibold">All Grades</h2>
+          <div>
+            <h2 className="text-lg font-semibold">All Grades</h2>
+            <p className="text-sm text-muted-foreground">
+              {totalItems} {totalItems === 1 ? "grade" : "grades"} total
+            </p>
+          </div>
           <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
             <DialogTrigger asChild>
               <Button className="bg-[#28acc1] hover:bg-[#1e8a9a]">
@@ -399,6 +436,34 @@ export default function GradesPage() {
           </Dialog>
         </div>
 
+        {/* Search Input */}
+        <div className="relative mb-6">
+          <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+            <svg
+              className="w-4 h-4 text-gray-500"
+              aria-hidden="true"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 20 20"
+            >
+              <path
+                stroke="currentColor"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth="2"
+                d="m19 19-4-4m0-7A7 7 0 1 1 1 8a7 7 0 0 1 14 0Z"
+              />
+            </svg>
+          </div>
+          <input
+            type="search"
+            className="block w-full p-2 pl-10 text-sm border rounded-lg bg-background"
+            placeholder="Search grades..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
         <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
           <DialogContent>
             <DialogHeader>
@@ -433,13 +498,92 @@ export default function GradesPage() {
           </DialogContent>
         </Dialog>
 
-        <DataTable
-          columns={columns}
-          data={grades}
-          searchKey="grade"
-          searchPlaceholder="Search grades..."
-          itemsPerPage={10}
-          loading={loading}
+        {/* Grades Table */}
+        <div className="rounded-md border">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b bg-muted/50">
+                <th className="h-10 px-2 text-left font-medium">Grade</th>
+                <th className="h-10 px-2 text-left font-medium">Products</th>
+                <th className="h-10 px-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={3} className="h-24 text-center">
+                    <div className="flex justify-center items-center h-full">
+                      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+                    </div>
+                  </td>
+                </tr>
+              ) : currentGrades.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="h-24 text-center">
+                    {searchTerm ? "No grades found matching your search." : "No grades found."}
+                  </td>
+                </tr>
+              ) : (
+                currentGrades.map((grade) => (
+                  <tr key={grade._id} className="border-b hover:bg-muted/50">
+                    <td className="p-2">
+                      <span className="font-medium">{grade.grade}</span>
+                    </td>
+                    <td className="p-2">
+                      <div className="flex items-center">
+                        {productCountsLoading[grade._id] ? (
+                          <div className="flex items-center">
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            <span className="text-muted-foreground">Loading...</span>
+                          </div>
+                        ) : (
+                          <span className="font-medium">{grade.productCount || 0}</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-2 text-right">
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => openEditDialog(grade)}
+                          className="h-8 w-8"
+                          title="Edit Grade"
+                        >
+                          <Pencil className="h-4 w-4" />
+                          <span className="sr-only">Edit</span>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => confirmDeleteGrade(grade)}
+                          className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                          title="Delete Grade"
+                        >
+                          {productCountsLoading[grade._id] ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash className="h-4 w-4" />
+                          )}
+                          <span className="sr-only">Delete</span>
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Enhanced Pagination */}
+        <EnhancedPagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={totalItems}
+          itemsPerPage={itemsPerPage}
+          onPageChange={handlePageChange}
+          onItemsPerPageChange={handleItemsPerPageChange}
         />
 
         {/* Completely separate dialogs for different cases */}
